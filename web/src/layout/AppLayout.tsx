@@ -8,6 +8,7 @@ import {
   ShoppingOutlined,
   CarOutlined,
   SettingOutlined,
+  EditOutlined,
 } from '@ant-design/icons'
 import { Link, useLocation } from 'react-router-dom'
 
@@ -22,13 +23,29 @@ const items = [
   { key: '/kw', icon: <LineChartOutlined />, label: <Link to="/kw">关键词/趋势</Link> },
   { key: '/inventory', icon: <DatabaseOutlined />, label: <Link to="/inventory">库存管理</Link> },
   { key: '/logistics', icon: <CarOutlined />, label: <Link to="/logistics">物流监控</Link> },
+  {
+    key: 'inputs',
+    icon: <EditOutlined />,
+    label: 'Inputs',
+    children: [
+      { key: '/inputs/asins', label: <Link to="/inputs/asins">ASIN 列表</Link> },
+      { key: '/inputs/keywords', label: <Link to="/inputs/keywords">关键词列表</Link> },
+    ],
+  },
   { key: '/range', icon: <DatabaseOutlined />, label: <Link to="/range">Range查看器</Link> },
   { key: '/config', icon: <SettingOutlined />, label: <Link to="/config">配置</Link> },
 ]
 
 export function AppLayout(props: { children: React.ReactNode }) {
   const loc = useLocation()
-  const selected = items.find((x) => loc.pathname === x.key)?.key || '/'
+
+  // best-effort select key
+  const flatKeys: string[] = []
+  for (const it of items as any[]) {
+    if (it.children) for (const c of it.children) flatKeys.push(c.key)
+    else flatKeys.push(it.key)
+  }
+  const selected = flatKeys.includes(loc.pathname) ? loc.pathname : '/'
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -38,7 +55,7 @@ export function AppLayout(props: { children: React.ReactNode }) {
             996813 控制台
           </Typography.Title>
         </div>
-        <Menu theme="dark" mode="inline" selectedKeys={[selected]} items={items} />
+        <Menu theme="dark" mode="inline" selectedKeys={[selected]} items={items as any} />
       </Sider>
       <Layout>
         <Header style={{ background: '#fff', padding: '0 16px' }}>
