@@ -3,6 +3,8 @@ import { AppLayout } from './layout/AppLayout'
 import Dashboard from './pages/Dashboard'
 import SheetRangeViewer from './pages/SheetRangeViewer'
 import Placeholder from './pages/Placeholder'
+import News from './pages/News'
+import Learn from './pages/Learn'
 
 function wrap(el: React.ReactNode) {
   return <AppLayout>{el}</AppLayout>
@@ -11,8 +13,8 @@ function wrap(el: React.ReactNode) {
 export const router = createBrowserRouter([
   { path: '/', element: wrap(<Dashboard />) },
   { path: '/range', element: wrap(<SheetRangeViewer />) },
-  { path: '/news', element: wrap(<Placeholder title="每日新闻" />) },
-  { path: '/learn', element: wrap(<Placeholder title="自动学习" />) },
+  { path: '/news', element: wrap(<News />) },
+  { path: '/learn', element: wrap(<Learn />) },
   { path: '/comp', element: wrap(<Placeholder title="竞品监控" />) },
   { path: '/finder', element: wrap(<Placeholder title="选品" />) },
   { path: '/kw', element: wrap(<Placeholder title="关键词/趋势" />) },
