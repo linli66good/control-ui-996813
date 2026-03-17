@@ -7,15 +7,15 @@ from . import sheets
 
 API_SHARED_SECRET = os.environ.get("API_SHARED_SECRET", "")
 
-app = FastAPI(title="996813 Control API", version="0.1.0")
+app = FastAPI(title="996813 Control API", version="0.2.1")
 
 # (Optional) CORS: not needed if only called via Pages Functions, but keep safe default.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[],
     allow_credentials=False,
-    allow_methods=["*"] ,
-    allow_headers=["*"] ,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -26,9 +26,14 @@ def require_secret(x_shared_secret: str | None):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-class RangeResp(BaseModel):
-    range: str
-    values: list[list[str]] | None = None
+def truthy(v: str | None) -> bool:
+    return str(v or "").strip().upper() in ("TRUE", "1", "YES", "Y", "ON")
+
+
+def is_header_row(country: str, asin_or_keyword: str) -> bool:
+    c = country.strip().lower()
+    a = asin_or_keyword.strip().lower()
+    return (c in ("country", "国家") and a in ("asin", "关键词", "keyword"))
 
 
 @app.get("/health")
@@ -70,5 +75,98 @@ def v1_update(req: UpdateReq, x_shared_secret: str | None = Header(default=None,
     require_secret(x_shared_secret)
     try:
         return sheets.update_range(req.A1, req.values)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/v1/inputs/asins")
+def v1_inputs_asins(x_shared_secret: str | None = Header(default=None, alias="X-Shared-Secret")):
+    """Return enabled ASIN watchlist from Inputs_ASIN tab.
+
+    Columns (header row): Country, ASIN, CategoryRank, Notes, Enabled
+    """
+    require_secret(x_shared_secret)
+    try:
+        data = sheets.get_range("Inputs_ASIN!A1:E2000")
+        vals = data.get("values") or []
+        if len(vals) < 2:
+            return {"items": []}
+        header = vals[0]
+        rows = vals[1:]
+
+        idx = {name: i for i, name in enumerate(header)}
+        out = []
+        for r in rows:
+            def get(name: str) -> str:
+                i = idx.get(name)
+                return r[i] if i is not None and i < len(r) else ""
+
+            country = get("Country").strip().upper()
+            asin = get("ASIN").strip().upper()
+            if not country or not asin:
+                continue
+            if is_header_row(country, asin):
+                continue
+
+            enabled = truthy(get("Enabled"))
+            if not enabled:
+                continue
+
+            out.append(
+                {
+                    "country": country,
+                    "asin": asin,
+                    "categoryRank": get("CategoryRank"),
+                    "notes": get("Notes"),
+                }
+            )
+        return {"items": out}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/v1/inputs/keywords")
+def v1_inputs_keywords(x_shared_secret: str | None = Header(default=None, alias="X-Shared-Secret")):
+    """Return enabled keyword watchlist from Inputs_Keywords tab.
+
+    Columns: Country, Keyword, Tag, AMZ123_Entry_URL, Enabled, Notes
+    """
+    require_secret(x_shared_secret)
+    try:
+        data = sheets.get_range("Inputs_Keywords!A1:F5000")
+        vals = data.get("values") or []
+        if len(vals) < 2:
+            return {"items": []}
+        header = vals[0]
+        rows = vals[1:]
+
+        idx = {name: i for i, name in enumerate(header)}
+        out = []
+        for r in rows:
+            def get(name: str) -> str:
+                i = idx.get(name)
+                return r[i] if i is not None and i < len(r) else ""
+
+            country = get("Country").strip().upper()
+            keyword = get("Keyword").strip()
+            if not country or not keyword:
+                continue
+            if is_header_row(country, keyword):
+                continue
+
+            enabled = truthy(get("Enabled"))
+            if not enabled:
+                continue
+
+            out.append(
+                {
+                    "country": country,
+                    "keyword": keyword,
+                    "tag": get("Tag"),
+                    "amz123EntryUrl": get("AMZ123_Entry_URL"),
+                    "notes": get("Notes"),
+                }
+            )
+        return {"items": out}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
