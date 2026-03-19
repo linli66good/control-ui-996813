@@ -3,6 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter
 
 from ..db.sqlite import connect
+from workers.news.build_daily_news import build_daily_news
 
 router = APIRouter(prefix='/v1/news', tags=['news'])
 
@@ -43,18 +44,21 @@ def get_daily(date: str | None = None):
 
     amazon = []
     ai = []
+    other = []
     for r in rows:
         item = _row_to_news(r)
         if item['news_type'] == 'amazon':
             amazon.append(item)
         elif item['news_type'] == 'ai':
             ai.append(item)
+        else:
+            other.append(item)
 
     return {
         'ok': True,
         'message': 'ok',
-        'data': {'date': news_date, 'amazon': amazon, 'ai': ai},
-        'meta': {'amazon_count': len(amazon), 'ai_count': len(ai)},
+        'data': {'date': news_date, 'amazon': amazon, 'ai': ai, 'other': other},
+        'meta': {'amazon_count': len(amazon), 'ai_count': len(ai), 'other_count': len(other)},
     }
 
 
@@ -97,10 +101,10 @@ def get_list(page: int = 1, page_size: int = 20, news_type: str | None = None, d
 
 @router.post('/refresh')
 def refresh_news():
-    # Worker `workers/news/*` is responsible for real fetching + writing into SQLite.
+    result = build_daily_news()
     return {
         'ok': True,
-        'message': 'daily news refresh triggered (skeleton)',
-        'data': {'amazon_count': 0, 'ai_count': 0},
+        'message': 'daily news sync completed',
+        'data': result,
         'meta': {},
     }
