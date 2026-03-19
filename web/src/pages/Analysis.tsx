@@ -1,5 +1,6 @@
 import { Alert, Button, Card, Descriptions, Drawer, Form, Input, List, Space, Table, Tag, Typography, message } from 'antd'
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createAnalysis, getAnalysisDetail, getAnalysisList, type AnalysisReport } from '../api/client'
 
@@ -46,8 +47,12 @@ function fetchMeta(report: AnalysisReport) {
 }
 
 export default function Analysis() {
-  const [country, setCountry] = useState('US')
-  const [asin, setAsin] = useState('')
+  const [searchParams] = useSearchParams()
+  const presetCountry = String(searchParams.get('country') || 'US').toUpperCase()
+  const presetAsin = String(searchParams.get('asin') || '').toUpperCase()
+
+  const [country, setCountry] = useState(presetCountry)
+  const [asin, setAsin] = useState(presetAsin)
   const [note, setNote] = useState('')
   const [selectedId, setSelectedId] = useState<number | null>(null)
 

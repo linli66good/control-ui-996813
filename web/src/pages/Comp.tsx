@@ -1,5 +1,6 @@
 import { Alert, Button, Card, Checkbox, Descriptions, Drawer, Form, Input, Popconfirm, Space, Table, Tag, Typography, message } from 'antd'
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   createMonitorTarget,
@@ -54,8 +55,12 @@ function statusMeta(record: MonitorTarget) {
 }
 
 export default function Comp() {
-  const [country, setCountry] = useState('US')
-  const [asin, setAsin] = useState('')
+  const [searchParams] = useSearchParams()
+  const presetCountry = String(searchParams.get('country') || 'US').toUpperCase()
+  const presetAsin = String(searchParams.get('asin') || '').toUpperCase()
+
+  const [country, setCountry] = useState(presetCountry)
+  const [asin, setAsin] = useState(presetAsin)
   const [note, setNote] = useState('')
   const [notifyEnabled, setNotifyEnabled] = useState(false)
   const [selectedId, setSelectedId] = useState<number | null>(null)

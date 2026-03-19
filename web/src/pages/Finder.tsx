@@ -172,13 +172,17 @@ export default function Finder() {
               key: 'actions',
               width: 260,
               fixed: 'right',
-              render: (_: unknown) => (
-                <Space wrap>
-                  <Link to="/analysis">分析</Link>
-                  <Link to="/comp">监控</Link>
-                  <Link to="/inventory">库存</Link>
-                </Space>
-              ),
+              render: (_: unknown, record: InputAsinItem) => {
+                const country = encodeURIComponent(String(record.country || '').toUpperCase())
+                const asin = encodeURIComponent(String(record.asin || '').toUpperCase())
+                return (
+                  <Space wrap>
+                    <Link to={`/analysis?country=${country}&asin=${asin}`}>分析</Link>
+                    <Link to={`/comp?country=${country}&asin=${asin}`}>监控</Link>
+                    <Link to={`/inventory`}>库存</Link>
+                  </Space>
+                )
+              },
             },
           ]}
         />
