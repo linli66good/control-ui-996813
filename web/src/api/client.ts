@@ -36,6 +36,45 @@ export async function getInputsAsins(): Promise<InputsAsinsResp> {
 }
 
 
+export type InventoryItem = {
+  id: number
+  country: string
+  asin: string
+  sellable_stock: number
+  inbound_stock: number
+  reserved_stock: number
+  avg_daily_sales: number
+  sales_7d: number
+  sales_14d: number
+  sales_30d: number
+  suggested_replenishment: number
+  risk_level: string
+  note: string
+  created_at: string
+  updated_at: string
+}
+
+export type InventoryListResp = {
+  ok: boolean
+  message: string
+  data: { items: InventoryItem[] }
+  meta: { page: number; page_size: number; total: number; country: string | null }
+}
+
+export async function getInventoryList(params?: {
+  page?: number
+  page_size?: number
+  country?: string
+}): Promise<InventoryListResp> {
+  const { data } = await http.get<InventoryListResp>('/v1/inventory/list', { params })
+  return data
+}
+
+export async function syncInventory() {
+  const { data } = await http.post('/v1/inventory/sync')
+  return data as { ok: boolean; message: string; data: any; meta: any }
+}
+
 export type LearnCard = {
   id: number
   date: string

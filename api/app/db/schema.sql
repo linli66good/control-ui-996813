@@ -33,6 +33,29 @@ CREATE TABLE IF NOT EXISTS news_items (
 
 CREATE INDEX IF NOT EXISTS idx_news_items_date_type ON news_items(news_date, news_type);
 
+CREATE TABLE IF NOT EXISTS inventory_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  country TEXT NOT NULL,
+  asin TEXT NOT NULL,
+  sellable_stock INTEGER DEFAULT 0,
+  inbound_stock INTEGER DEFAULT 0,
+  reserved_stock INTEGER DEFAULT 0,
+  avg_daily_sales REAL DEFAULT 0,
+  sales_7d INTEGER DEFAULT 0,
+  sales_14d INTEGER DEFAULT 0,
+  sales_30d INTEGER DEFAULT 0,
+  suggested_replenishment INTEGER DEFAULT 0,
+  note TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_items_unique
+ON inventory_items(country, asin);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_items_country
+ON inventory_items(country, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS monitor_targets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   country TEXT NOT NULL,

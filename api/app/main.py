@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from . import sheets
 from .db.sqlite import init_db
-from .routes import learn, news, monitor, analysis, system
+from .routes import learn, news, monitor, analysis, system, inventory
 
 API_SHARED_SECRET = os.environ.get("API_SHARED_SECRET", "")
 
@@ -186,3 +186,4 @@ app.include_router(learn.router)
 app.include_router(news.router)
 app.include_router(monitor.router)
 app.include_router(analysis.router)
+app.include_router(inventory.router)
