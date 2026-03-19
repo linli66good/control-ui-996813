@@ -121,7 +121,7 @@ export default function News() {
             onClick={() => {
               refreshMutation.mutate()
             }}
-            loading={refreshMutation.isLoading}
+            loading={refreshMutation.isPending}
           >
             同步今日新闻
           </Button>

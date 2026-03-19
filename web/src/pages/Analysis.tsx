@@ -1,7 +1,16 @@
-import { Alert, Button, Card, Drawer, Form, Input, Space, Table, Tag, Typography, message } from 'antd'
+import { Alert, Button, Card, Descriptions, Drawer, Form, Input, Space, Table, Tag, Typography, message } from 'antd'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createAnalysis, getAnalysisDetail, getAnalysisList, type AnalysisReport } from '../api/client'
+
+function parsePayload(payload: string | null | undefined): Record<string, any> | null {
+  if (!payload) return null
+  try {
+    return JSON.parse(payload)
+  } catch {
+    return null
+  }
+}
 
 export default function Analysis() {
   const [country, setCountry] = useState('US')
@@ -23,7 +32,7 @@ export default function Analysis() {
   const createM = useMutation({
     mutationFn: createAnalysis,
     onSuccess: async (resp) => {
-      message.success(resp.message || '已生成分析骨架')
+      message.success(resp.message || '已生成分析')
       setSelectedId(resp.data.id)
       await listQ.refetch()
     },
@@ -32,6 +41,7 @@ export default function Analysis() {
 
   const rows = useMemo(() => listQ.data?.data.items || [], [listQ.data])
   const current: AnalysisReport | null = detailQ.data?.data || null
+  const currentPayload = parsePayload(current?.input_payload)
 
   return (
     <>
@@ -53,7 +63,7 @@ export default function Analysis() {
           </Form.Item>
         </Form>
         <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
-          当前是骨架版：先把国家 + ASIN 入库并生成占位报告，后面再接真实抓取与 AI 分析。 
+          现在已接入真实商品抓取：优先直抓 Amazon，遇到风控页会自动走镜像回退，并把结果直接落库。
         </Typography.Paragraph>
       </Card>
 
@@ -69,17 +79,35 @@ export default function Analysis() {
             { title: '国家', dataIndex: 'country', width: 90 },
             { title: 'ASIN', dataIndex: 'asin', width: 140 },
             {
-              title: '输入',
-              dataIndex: 'input_payload',
-              width: 260,
-              render: (v) => <Typography.Text ellipsis={{ tooltip: String(v || '') }}>{String(v || '')}</Typography.Text>,
+              title: '抓取状态',
+              key: 'fetch_status',
+              width: 120,
+              render: (_, record: AnalysisReport) => {
+                const payload = parsePayload(record.input_payload)
+                const ok = !!payload?.fetch_ok
+                return <Tag color={ok ? 'green' : 'orange'}>{ok ? '抓取成功' : '回退/失败'}</Tag>
+              },
+            },
+            {
+              title: '标题/说明',
+              key: 'title_hint',
+              width: 280,
+              render: (_, record: AnalysisReport) => {
+                const payload = parsePayload(record.input_payload)
+                const text = payload?.title || payload?.error || '-'
+                return <Typography.Text ellipsis={{ tooltip: String(text) }}>{String(text)}</Typography.Text>
+              },
             },
             { title: '创建时间', dataIndex: 'created_at', width: 180 },
             {
               title: '状态',
               key: 'status',
               width: 100,
-              render: () => <Tag color="green">ready</Tag>,
+              render: (_, record: AnalysisReport) => {
+                const payload = parsePayload(record.input_payload)
+                const mode = payload?.fetch_ok ? 'ready' : 'fallback'
+                return <Tag color={mode === 'ready' ? 'blue' : 'gold'}>{mode}</Tag>
+              },
             },
             {
               title: '操作',
@@ -91,15 +119,56 @@ export default function Analysis() {
         />
       </Card>
 
-      <Drawer title={current ? `${current.country} / ${current.asin}` : '分析详情'} open={!!selectedId} onClose={() => setSelectedId(null)} width={760}>
+      <Drawer title={current ? `${current.country} / ${current.asin}` : '分析详情'} open={!!selectedId} onClose={() => setSelectedId(null)} width={860}>
         {detailQ.isLoading ? <Typography.Text>加载中...</Typography.Text> : null}
         {current ? (
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
-            <Typography.Paragraph style={{ marginBottom: 0 }}><b>ID:</b> {current.id}</Typography.Paragraph>
-            <Typography.Paragraph style={{ marginBottom: 0 }}><b>创建时间:</b> {current.created_at}</Typography.Paragraph>
-            <Typography.Paragraph style={{ marginBottom: 0 }}><b>输入参数:</b> {current.input_payload}</Typography.Paragraph>
-            <Typography.Paragraph style={{ marginBottom: 0 }}><b>报告内容</b></Typography.Paragraph>
-            <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>{current.report_markdown}</Typography.Paragraph>
+            <Descriptions bordered size="small" column={1}>
+              <Descriptions.Item label="ID">{current.id}</Descriptions.Item>
+              <Descriptions.Item label="创建时间">{current.created_at}</Descriptions.Item>
+              <Descriptions.Item label="抓取状态">
+                <Tag color={currentPayload?.fetch_ok ? 'green' : 'orange'}>{currentPayload?.fetch_ok ? '抓取成功' : '回退/失败'}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="抓取模式">{currentPayload?.source_mode || '-'}</Descriptions.Item>
+              <Descriptions.Item label="商品链接">
+                {currentPayload?.product_url ? (
+                  <Typography.Link href={currentPayload.product_url} target="_blank">
+                    {currentPayload.product_url}
+                  </Typography.Link>
+                ) : (
+                  '-'
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label="标题">{currentPayload?.title || '-'}</Descriptions.Item>
+              <Descriptions.Item label="价格">{currentPayload?.price_text || '-'}</Descriptions.Item>
+              <Descriptions.Item label="主图">{currentPayload?.main_image_url || '-'}</Descriptions.Item>
+              <Descriptions.Item label="错误信息">{currentPayload?.error || '-'}</Descriptions.Item>
+              <Descriptions.Item label="输入参数">
+                <Typography.Text code>{current.input_payload}</Typography.Text>
+              </Descriptions.Item>
+            </Descriptions>
+
+            {Array.isArray(currentPayload?.bullets) && currentPayload.bullets.length ? (
+              <Card size="small" title="卖点提取">
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {currentPayload.bullets.map((item: string, idx: number) => (
+                    <li key={`${idx}-${item}`} style={{ marginBottom: 8 }}>{item}</li>
+                  ))}
+                </ul>
+              </Card>
+            ) : null}
+
+            {currentPayload?.description ? (
+              <Card size="small" title="描述摘要">
+                <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>
+                  {currentPayload.description}
+                </Typography.Paragraph>
+              </Card>
+            ) : null}
+
+            <Card size="small" title="报告内容">
+              <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>{current.report_markdown}</Typography.Paragraph>
+            </Card>
           </Space>
         ) : null}
       </Drawer>

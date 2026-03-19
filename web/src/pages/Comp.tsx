@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Drawer, Form, Input, Popconfirm, Space, Table, Tag, Typography, message } from 'antd'
+import { Alert, Button, Card, Descriptions, Drawer, Form, Input, Popconfirm, Space, Table, Tag, Typography, message } from 'antd'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
@@ -11,6 +11,34 @@ import {
   type MonitorSnapshot,
   type MonitorTarget,
 } from '../api/client'
+
+function parsePayload(payload: string | null | undefined): Record<string, any> | null {
+  if (!payload) return null
+  try {
+    return JSON.parse(payload)
+  } catch {
+    return null
+  }
+}
+
+function renderChangedTags(changedFields: string | string[] | null | undefined) {
+  const arr = Array.isArray(changedFields)
+    ? changedFields
+    : String(changedFields || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+  if (!arr.length) return <Typography.Text type="secondary">-</Typography.Text>
+  return (
+    <Space size={[4, 4]} wrap>
+      {arr.map((item) => (
+        <Tag key={item} color={item === 'fetch_error' ? 'red' : item === 'first_capture' ? 'blue' : 'green'}>
+          {item}
+        </Tag>
+      ))}
+    </Space>
+  )
+}
 
 export default function Comp() {
   const [country, setCountry] = useState('US')
@@ -43,8 +71,12 @@ export default function Comp() {
 
   const runM = useMutation({
     mutationFn: runMonitorTarget,
-    onSuccess: async (_, id) => {
-      message.success(`已执行扫描 #${id}`)
+    onSuccess: async (resp, id) => {
+      if (resp?.ok) {
+        message.success(`已执行扫描 #${id}`)
+      } else {
+        message.warning(resp?.message || `扫描完成，但存在异常 #${id}`)
+      }
       await listQ.refetch()
       if (selectedId) {
         await detailQ.refetch()
@@ -67,6 +99,7 @@ export default function Comp() {
   const rows = useMemo(() => listQ.data?.data.items || [], [listQ.data])
   const current = detailQ.data?.data.target || null
   const latest = detailQ.data?.data.latest_snapshot || null
+  const latestPayload = parsePayload(latest?.raw_payload)
   const snapshots: MonitorSnapshot[] = snapshotsQ.data?.data.items || []
 
   return (
@@ -89,7 +122,7 @@ export default function Comp() {
           </Form.Item>
         </Form>
         <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
-          当前是监控骨架版：已支持目标入库、手动触发一次扫描、查看最近快照和历史快照。 
+          当前已接入真实商品抓取：可手动扫描一次，查看最新标题、价格、抓取模式，以及本次相对上次发生了哪些变化。
         </Typography.Paragraph>
       </Card>
 
@@ -104,7 +137,7 @@ export default function Comp() {
             { title: 'ID', dataIndex: 'id', width: 80 },
             { title: '国家', dataIndex: 'country', width: 90 },
             { title: 'ASIN', dataIndex: 'asin', width: 140 },
-            { title: '备注', dataIndex: 'note', width: 220 },
+            { title: '备注', dataIndex: 'note', width: 180 },
             { title: '最近价格', dataIndex: 'price_text', width: 120 },
             {
               title: '最近标题',
@@ -137,26 +170,49 @@ export default function Comp() {
         />
       </Card>
 
-      <Drawer title={current ? `${current.country} / ${current.asin}` : '监控详情'} open={!!selectedId} onClose={() => setSelectedId(null)} width={860}>
+      <Drawer title={current ? `${current.country} / ${current.asin}` : '监控详情'} open={!!selectedId} onClose={() => setSelectedId(null)} width={960}>
         {detailQ.isLoading ? <Typography.Text>加载中...</Typography.Text> : null}
         {current ? (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
             <Card size="small" title="目标信息">
-              <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                <Typography.Paragraph style={{ marginBottom: 0 }}><b>ID:</b> {current.id}</Typography.Paragraph>
-                <Typography.Paragraph style={{ marginBottom: 0 }}><b>国家:</b> {current.country}</Typography.Paragraph>
-                <Typography.Paragraph style={{ marginBottom: 0 }}><b>ASIN:</b> {current.asin}</Typography.Paragraph>
-                <Typography.Paragraph style={{ marginBottom: 0 }}><b>备注:</b> {current.note || '-'}</Typography.Paragraph>
-              </Space>
+              <Descriptions bordered size="small" column={1}>
+                <Descriptions.Item label="ID">{current.id}</Descriptions.Item>
+                <Descriptions.Item label="国家">{current.country}</Descriptions.Item>
+                <Descriptions.Item label="ASIN">{current.asin}</Descriptions.Item>
+                <Descriptions.Item label="备注">{current.note || '-'}</Descriptions.Item>
+              </Descriptions>
             </Card>
 
             <Card size="small" title="最近快照">
               {latest ? (
-                <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                  <Typography.Paragraph style={{ marginBottom: 0 }}><b>时间:</b> {latest.captured_at}</Typography.Paragraph>
-                  <Typography.Paragraph style={{ marginBottom: 0 }}><b>价格:</b> {latest.price_text || '-'}</Typography.Paragraph>
-                  <Typography.Paragraph style={{ marginBottom: 0 }}><b>标题:</b> {latest.title || '-'}</Typography.Paragraph>
-                  <Typography.Paragraph style={{ marginBottom: 0 }}><b>变更字段:</b> {latest.changed_fields || '-'}</Typography.Paragraph>
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                  <Descriptions bordered size="small" column={1}>
+                    <Descriptions.Item label="时间">{latest.captured_at}</Descriptions.Item>
+                    <Descriptions.Item label="价格">{latest.price_text || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="标题">{latest.title || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="变更字段">{renderChangedTags(latest.changed_fields)}</Descriptions.Item>
+                    <Descriptions.Item label="抓取模式">{latestPayload?.source_mode || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="商品链接">
+                      {latestPayload?.product_url ? (
+                        <Typography.Link href={latestPayload.product_url} target="_blank">
+                          {latestPayload.product_url}
+                        </Typography.Link>
+                      ) : (
+                        '-'
+                      )}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="错误信息">{latestPayload?.error || '-'}</Descriptions.Item>
+                  </Descriptions>
+
+                  {Array.isArray(latestPayload?.bullets) && latestPayload.bullets.length ? (
+                    <Card size="small" title="本次卖点提取">
+                      <ul style={{ margin: 0, paddingLeft: 18 }}>
+                        {latestPayload.bullets.map((item: string, idx: number) => (
+                          <li key={`${idx}-${item}`} style={{ marginBottom: 8 }}>{item}</li>
+                        ))}
+                      </ul>
+                    </Card>
+                  ) : null}
                 </Space>
               ) : (
                 <Typography.Text type="secondary">暂无快照</Typography.Text>
@@ -174,7 +230,12 @@ export default function Comp() {
                   { title: '时间', dataIndex: 'captured_at', width: 180 },
                   { title: '价格', dataIndex: 'price_text', width: 120 },
                   { title: '标题', dataIndex: 'title', width: 320 },
-                  { title: '变更字段', dataIndex: 'changed_fields', width: 160 },
+                  {
+                    title: '变更字段',
+                    dataIndex: 'changed_fields',
+                    width: 220,
+                    render: (v) => renderChangedTags(v),
+                  },
                 ]}
               />
             </Card>

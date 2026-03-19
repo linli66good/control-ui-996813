@@ -122,7 +122,7 @@ export default function Learn() {
               onClick={() => {
                 syncMutation.mutate()
               }}
-              loading={syncMutation.isLoading}
+              loading={syncMutation.isPending}
             >
               同步今日 Top3
             </Button>
@@ -146,13 +146,13 @@ export default function Learn() {
         {loadError ? (
           <Typography.Text type="danger">加载失败：{String(apiQ.error || sheetQ.error)}</Typography.Text>
         ) : (
-          <Table
+            <Table
             size="small"
             rowKey="key"
             dataSource={rows}
             pagination={{ pageSize: 20 }}
             scroll={{ x: true }}
-            columns=[
+            columns={[
               { title: 'Date', dataIndex: 'Date', width: 120, fixed: 'left' },
               { title: 'Round', dataIndex: 'Round', width: 80 },
               { title: 'Item', dataIndex: 'Item', width: 140 },
