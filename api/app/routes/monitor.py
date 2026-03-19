@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from ..db.sqlite import connect
-from ..services.amazon_product import ProductFetchError, compare_snapshot, extract_snapshot, snapshot_to_json
+from ..services.amazon_product import ProductFetchError, compare_snapshot, extract_snapshot
 
 router = APIRouter(prefix='/v1/monitor', tags=['monitor'])
 
@@ -21,8 +21,17 @@ class MonitorRunReq(BaseModel):
     target_id: int
 
 
+class MonitorBatchRunReq(BaseModel):
+    target_ids: list[int]
+
+
 class MonitorNotifyReq(BaseModel):
     target_id: int
+    notify_enabled: bool
+
+
+class MonitorBatchNotifyReq(BaseModel):
+    target_ids: list[int]
     notify_enabled: bool
 
 
@@ -46,6 +55,77 @@ def _latest_payload(conn, target_id: int) -> dict:
         return json.loads(row['raw_payload'])
     except Exception:
         return {}
+
+
+def _capture_target(conn, target_id: int):
+    now = _now()
+    target = conn.execute('SELECT * FROM monitor_targets WHERE id = ?', (target_id,)).fetchone()
+    if not target:
+        return {'ok': False, 'message': 'target not found', 'data': {'target_id': target_id, 'status': 'missing'}, 'meta': {}}
+
+    previous_payload = _latest_payload(conn, target_id)
+    country = target['country']
+    asin = target['asin']
+
+    try:
+        snapshot = extract_snapshot(country, asin)
+        changed_fields = compare_snapshot(previous_payload, snapshot)
+        raw_payload = snapshot.raw_payload | {'changed_fields': changed_fields}
+        conn.execute(
+            '''
+            INSERT INTO monitor_snapshots (
+              target_id, price_text, title, main_image_url, a_plus_text, changed_fields, raw_payload, captured_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            (
+                target_id,
+                snapshot.price_text,
+                snapshot.title,
+                snapshot.main_image_url,
+                snapshot.a_plus_text,
+                ','.join(changed_fields),
+                json.dumps(raw_payload, ensure_ascii=False),
+                now,
+            ),
+        )
+        conn.execute('UPDATE monitor_targets SET updated_at = ? WHERE id = ?', (now, target_id))
+        return {
+            'ok': True,
+            'message': 'monitor snapshot captured',
+            'data': {
+                'target_id': target_id,
+                'status': 'done',
+                'changed_fields': changed_fields,
+                'title': snapshot.title,
+                'price_text': snapshot.price_text,
+            },
+            'meta': {},
+        }
+    except ProductFetchError as e:
+        conn.execute(
+            '''
+            INSERT INTO monitor_snapshots (
+              target_id, price_text, title, main_image_url, a_plus_text, changed_fields, raw_payload, captured_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            (
+                target_id,
+                '',
+                f'{country} / {asin} capture failed',
+                '',
+                '',
+                'fetch_error',
+                json.dumps({'error': str(e), 'country': country, 'asin': asin}, ensure_ascii=False),
+                now,
+            ),
+        )
+        conn.execute('UPDATE monitor_targets SET updated_at = ? WHERE id = ?', (now, target_id))
+        return {
+            'ok': False,
+            'message': f'capture failed: {e}',
+            'data': {'target_id': target_id, 'status': 'failed'},
+            'meta': {},
+        }
 
 
 @router.get('/list')
@@ -122,77 +202,53 @@ def update_notify(req: MonitorNotifyReq):
     return {'ok': True, 'message': 'monitor notify updated', 'data': dict(updated) if updated else None, 'meta': {}}
 
 
+@router.post('/batch-update-notify')
+def batch_update_notify(req: MonitorBatchNotifyReq):
+    target_ids = sorted({int(x) for x in req.target_ids if int(x) > 0})
+    if not target_ids:
+        return {'ok': False, 'message': 'no target ids', 'data': {'updated': 0, 'target_ids': []}, 'meta': {}}
+
+    now = _now()
+    placeholders = ','.join('?' for _ in target_ids)
+    params = [1 if req.notify_enabled else 0, now, *target_ids]
+    with connect() as conn:
+        conn.execute(
+            f'UPDATE monitor_targets SET notify_enabled = ?, updated_at = ? WHERE id IN ({placeholders})',
+            params,
+        )
+    return {
+        'ok': True,
+        'message': 'monitor notify batch updated',
+        'data': {'updated': len(target_ids), 'target_ids': target_ids, 'notify_enabled': req.notify_enabled},
+        'meta': {},
+    }
+
+
 @router.post('/run')
 def run_target(req: MonitorRunReq):
-    now = _now()
     with connect() as conn:
-        target = conn.execute('SELECT * FROM monitor_targets WHERE id = ?', (req.target_id,)).fetchone()
-        if not target:
-            return {'ok': False, 'message': 'target not found', 'data': None, 'meta': {}}
+        return _capture_target(conn, req.target_id)
 
-        previous_payload = _latest_payload(conn, req.target_id)
-        country = target['country']
-        asin = target['asin']
 
-        try:
-            snapshot = extract_snapshot(country, asin)
-            changed_fields = compare_snapshot(previous_payload, snapshot)
-            raw_payload = snapshot.raw_payload | {'changed_fields': changed_fields}
-            conn.execute(
-                '''
-                INSERT INTO monitor_snapshots (
-                  target_id, price_text, title, main_image_url, a_plus_text, changed_fields, raw_payload, captured_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ''',
-                (
-                    req.target_id,
-                    snapshot.price_text,
-                    snapshot.title,
-                    snapshot.main_image_url,
-                    snapshot.a_plus_text,
-                    ','.join(changed_fields),
-                    json.dumps(raw_payload, ensure_ascii=False),
-                    now,
-                ),
-            )
-            conn.execute('UPDATE monitor_targets SET updated_at = ? WHERE id = ?', (now, req.target_id))
-            return {
-                'ok': True,
-                'message': 'monitor snapshot captured',
-                'data': {
-                    'target_id': req.target_id,
-                    'status': 'done',
-                    'changed_fields': changed_fields,
-                    'title': snapshot.title,
-                    'price_text': snapshot.price_text,
-                },
-                'meta': {},
-            }
-        except ProductFetchError as e:
-            conn.execute(
-                '''
-                INSERT INTO monitor_snapshots (
-                  target_id, price_text, title, main_image_url, a_plus_text, changed_fields, raw_payload, captured_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ''',
-                (
-                    req.target_id,
-                    '',
-                    f'{country} / {asin} capture failed',
-                    '',
-                    '',
-                    'fetch_error',
-                    json.dumps({'error': str(e), 'country': country, 'asin': asin}, ensure_ascii=False),
-                    now,
-                ),
-            )
-            conn.execute('UPDATE monitor_targets SET updated_at = ? WHERE id = ?', (now, req.target_id))
-            return {
-                'ok': False,
-                'message': f'capture failed: {e}',
-                'data': {'target_id': req.target_id, 'status': 'failed'},
-                'meta': {},
-            }
+@router.post('/batch-run')
+def batch_run(req: MonitorBatchRunReq):
+    target_ids = sorted({int(x) for x in req.target_ids if int(x) > 0})
+    if not target_ids:
+        return {'ok': False, 'message': 'no target ids', 'data': {'items': []}, 'meta': {'total': 0, 'success': 0, 'failed': 0}}
+
+    results = []
+    with connect() as conn:
+        for target_id in target_ids:
+            results.append(_capture_target(conn, target_id))
+
+    success = sum(1 for item in results if item.get('ok'))
+    failed = len(results) - success
+    return {
+        'ok': failed == 0,
+        'message': f'batch run finished: success={success}, failed={failed}',
+        'data': {'items': results},
+        'meta': {'total': len(results), 'success': success, 'failed': failed},
+    }
 
 
 @router.get('/{target_id}')

@@ -1,8 +1,12 @@
 import { Alert, Button, Card, Checkbox, Descriptions, Drawer, Form, Input, Popconfirm, Space, Switch, Table, Tag, Typography, message } from 'antd'
+import type { TableProps } from 'antd'
+import type { Key } from 'react'
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
+  batchRunMonitorTargets,
+  batchUpdateMonitorNotify,
   createMonitorTarget,
   deleteMonitorTarget,
   getMonitorDetail,
@@ -66,6 +70,7 @@ export default function Comp() {
   const [notifyEnabled, setNotifyEnabled] = useState(false)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [togglingId, setTogglingId] = useState<number | null>(null)
+  const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([])
 
   const listQ = useQuery({ queryKey: ['monitor-list'], queryFn: () => getMonitorList() })
   const detailQ = useQuery({
@@ -105,6 +110,17 @@ export default function Comp() {
     },
   })
 
+  const batchNotifyM = useMutation({
+    mutationFn: ({ targetIds, notifyEnabled }: { targetIds: number[]; notifyEnabled: boolean }) =>
+      batchUpdateMonitorNotify(targetIds, notifyEnabled),
+    onSuccess: async (_resp, vars) => {
+      message.success(vars.notifyEnabled ? `已批量开启 ${vars.targetIds.length} 项通知` : `已批量关闭 ${vars.targetIds.length} 项通知`)
+      await listQ.refetch()
+      if (selectedId) await detailQ.refetch()
+    },
+    onError: (err) => message.error(String(err)),
+  })
+
   const runM = useMutation({
     mutationFn: runMonitorTarget,
     onSuccess: async (resp, id) => {
@@ -117,6 +133,26 @@ export default function Comp() {
         }
       } else {
         message.error(resp?.message || `扫描失败 #${id}`)
+      }
+      await listQ.refetch()
+      if (selectedId) {
+        await detailQ.refetch()
+        await snapshotsQ.refetch()
+      }
+    },
+    onError: (err) => message.error(String(err)),
+  })
+
+  const batchRunM = useMutation({
+    mutationFn: (ids: number[]) => batchRunMonitorTargets(ids),
+    onSuccess: async (resp, ids) => {
+      const meta = resp?.meta || {}
+      const success = Number(meta.success || 0)
+      const failed = Number(meta.failed || 0)
+      if (failed > 0) {
+        message.warning(`批量扫描完成：成功 ${success}，失败 ${failed}`)
+      } else {
+        message.success(`已批量扫描 ${ids.length} 项`)
       }
       await listQ.refetch()
       if (selectedId) {
@@ -148,6 +184,23 @@ export default function Comp() {
     notifyM.mutate({ targetId: record.id, notifyEnabled: checked })
   }
 
+  const rowSelection: TableProps<MonitorTarget>['rowSelection'] = {
+    selectedRowKeys,
+    onChange: (keys) => setSelectedRowKeys(keys),
+  }
+
+  const selectedIds = useMemo(() => selectedRowKeys.map((k) => Number(k)), [selectedRowKeys])
+
+  const handleBatchRun = () => {
+    if (!selectedIds.length) return
+    batchRunM.mutate(selectedIds)
+  }
+
+  const handleBatchNotify = (enabled: boolean) => {
+    if (!selectedIds.length) return
+    batchNotifyM.mutate({ targetIds: selectedIds, notifyEnabled: enabled })
+  }
+
   return (
     <>
       <Card title="竞品监控" style={{ marginBottom: 16 }}>
@@ -175,13 +228,45 @@ export default function Comp() {
         </Typography.Paragraph>
       </Card>
 
-      <Card title="监控目标">
+      <Card
+        title="监控目标"
+        extra={
+          <Space>
+            <Typography.Text type="secondary">已选 {selectedIds.length} 项</Typography.Text>
+            <Button
+              size="small"
+              onClick={handleBatchRun}
+              loading={batchRunM.isPending}
+              disabled={!selectedIds.length || batchRunM.isPending}
+            >
+              批量扫描
+            </Button>
+            <Button
+              size="small"
+              onClick={() => handleBatchNotify(true)}
+              loading={batchNotifyM.isPending}
+              disabled={!selectedIds.length || batchNotifyM.isPending}
+            >
+              批量开通知
+            </Button>
+            <Button
+              size="small"
+              onClick={() => handleBatchNotify(false)}
+              loading={batchNotifyM.isPending}
+              disabled={!selectedIds.length || batchNotifyM.isPending}
+            >
+              批量关通知
+            </Button>
+          </Space>
+        }
+      >
         {listQ.isError ? <Alert type="error" showIcon message={String(listQ.error)} /> : null}
         <Table
           rowKey="id"
           dataSource={rows}
           loading={listQ.isLoading || listQ.isFetching}
           pagination={{ pageSize: 20 }}
+          rowSelection={rowSelection}
           columns={[
             { title: 'ID', dataIndex: 'id', width: 80 },
             { title: '国家', dataIndex: 'country', width: 90 },
@@ -304,7 +389,9 @@ export default function Comp() {
                     <Card size="small" title="本次卖点提取">
                       <ul style={{ margin: 0, paddingLeft: 18 }}>
                         {latestPayload.bullets.map((item: string, idx: number) => (
-                          <li key={`${idx}-${item}`} style={{ marginBottom: 8 }}>{item}</li>
+                          <li key={`${idx}-${item}`} style={{ marginBottom: 8 }}>
+                            {item}
+                          </li>
                         ))}
                       </ul>
                     </Card>

@@ -359,6 +359,14 @@ export async function updateMonitorNotify(targetId: number, notifyEnabled: boole
   return data
 }
 
+export async function batchUpdateMonitorNotify(targetIds: number[], notifyEnabled: boolean) {
+  const { data } = await http.post('/v1/monitor/batch-update-notify', {
+    target_ids: targetIds,
+    notify_enabled: notifyEnabled,
+  })
+  return data
+}
+
 export async function deleteMonitorTarget(targetId: number) {
   const { data } = await http.post('/v1/monitor/delete', null, { params: { target_id: targetId } })
   return data
@@ -366,6 +374,11 @@ export async function deleteMonitorTarget(targetId: number) {
 
 export async function runMonitorTarget(targetId: number) {
   const { data } = await http.post('/v1/monitor/run', { target_id: targetId })
+  return data
+}
+
+export async function batchRunMonitorTargets(targetIds: number[]) {
+  const { data } = await http.post('/v1/monitor/batch-run', { target_ids: targetIds })
   return data
 }
 
