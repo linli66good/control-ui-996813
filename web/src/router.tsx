@@ -9,6 +9,10 @@ import Comp from './pages/Comp'
 import Analysis from './pages/Analysis'
 import InputsAsin from './pages/InputsAsin'
 import InputsKeywords from './pages/InputsKeywords'
+import Keywords from './pages/Keywords'
+import Inventory from './pages/Inventory'
+import Logistics from './pages/Logistics'
+import ConfigPage from './pages/ConfigPage'
 
 function wrap(el: React.ReactNode) {
   return <AppLayout>{el}</AppLayout>
@@ -24,8 +28,9 @@ export const router = createBrowserRouter([
   { path: '/comp', element: wrap(<Comp />) },
   { path: '/analysis', element: wrap(<Analysis />) },
   { path: '/finder', element: wrap(<Placeholder title="选品" />) },
-  { path: '/kw', element: wrap(<Placeholder title="关键词/趋势" />) },
-  { path: '/inventory', element: wrap(<Placeholder title="库存管理" />) },
-  { path: '/logistics', element: wrap(<Placeholder title="物流监控" />) },
-  { path: '/config', element: wrap(<Placeholder title="配置" />) },
+  { path: '/kw', element: wrap(<Keywords />) },
+  { path: '/keywords', element: wrap(<Keywords />) },
+  { path: '/inventory', element: wrap(<Inventory />) },
+  { path: '/logistics', element: wrap(<Logistics />) },
+  { path: '/config', element: wrap(<ConfigPage />) },
 ])
