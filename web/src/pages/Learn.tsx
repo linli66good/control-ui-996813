@@ -1,7 +1,7 @@
-import { Alert, Button, Card, Drawer, Input, Space, Table, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Drawer, Input, Space, Table, Tag, Typography, message } from 'antd'
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { getLearnList, getRange, type LearnCard } from '../api/client'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { generateDailyLearn, getLearnList, getRange, type LearnCard } from '../api/client'
 
 function toRows(values: string[][]) {
   const header = values[0] || []
@@ -50,6 +50,22 @@ export default function Learn() {
     queryKey: ['range', a1],
     queryFn: () => getRange(a1),
     enabled: !apiQ.data?.data.items?.length,
+  })
+
+  const syncMutation = useMutation({
+    mutationFn: generateDailyLearn,
+    onSuccess: (res) => {
+      void apiQ.refetch()
+      void sheetQ.refetch()
+      if (res?.ok) {
+        message.success(`已同步 Top3：有效 ${res.data.valid} 条，新增 ${res.data.inserted} 条，更新 ${res.data.updated} 条`)
+      } else {
+        message.warning(res?.message || '同步完成，但返回异常')
+      }
+    },
+    onError: (err: any) => {
+      message.error(`同步失败：${String(err?.message || err)}`)
+    },
   })
 
   const rows = useMemo(() => {
@@ -101,6 +117,15 @@ export default function Learn() {
             >
               刷新
             </Button>
+            <Button
+              type="primary"
+              onClick={() => {
+                syncMutation.mutate()
+              }}
+              loading={syncMutation.isLoading}
+            >
+              同步今日 Top3
+            </Button>
           </Space>
         }
       >
@@ -127,7 +152,7 @@ export default function Learn() {
             dataSource={rows}
             pagination={{ pageSize: 20 }}
             scroll={{ x: true }}
-            columns={[
+            columns=[
               { title: 'Date', dataIndex: 'Date', width: 120, fixed: 'left' },
               { title: 'Round', dataIndex: 'Round', width: 80 },
               { title: 'Item', dataIndex: 'Item', width: 140 },

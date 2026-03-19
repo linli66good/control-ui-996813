@@ -87,6 +87,11 @@ export async function getLearnDetail(itemId: number): Promise<LearnDetailResp> {
   return data
 }
 
+export async function generateDailyLearn() {
+  const { data } = await http.post('/v1/learn/generate-daily')
+  return data as { ok: boolean; message: string; data: any; meta: any }
+}
+
 export type NewsItem = {
   id: number
   news_date: string
@@ -108,10 +113,12 @@ export type NewsDailyResp = {
     date: string
     amazon: NewsItem[]
     ai: NewsItem[]
+    other: NewsItem[]
   }
   meta: {
     amazon_count: number
     ai_count: number
+    other_count: number
   }
 }
 
@@ -143,6 +150,11 @@ export async function getNewsList(params?: {
 }): Promise<NewsListResp> {
   const { data } = await http.get<NewsListResp>('/v1/news/list', { params })
   return data
+}
+
+export async function refreshNews() {
+  const { data } = await http.post('/v1/news/refresh')
+  return data as { ok: boolean; message: string; data: any; meta: any }
 }
 
 export type AnalysisReport = {

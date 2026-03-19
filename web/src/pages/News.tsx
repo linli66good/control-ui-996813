@@ -1,7 +1,7 @@
-import { Alert, Button, Card, Input, Space, Table, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Input, Space, Table, Tag, Typography, message } from 'antd'
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { getNewsList, getRange, type NewsItem } from '../api/client'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { getNewsList, getRange, refreshNews, type NewsItem } from '../api/client'
 
 function toRows(values: string[][]) {
   const header = values[0] || []
@@ -42,6 +42,24 @@ export default function News() {
     queryKey: ['range', a1],
     queryFn: () => getRange(a1),
     enabled: !(apiQ.data?.data.items?.length ?? 0),
+  })
+
+  const refreshMutation = useMutation({
+    mutationFn: refreshNews,
+    onSuccess: (res) => {
+      void apiQ.refetch()
+      void sheetQ.refetch()
+      if (res?.ok) {
+        message.success(
+          `已同步新闻：有效 ${res.data.valid} 条，新增 ${res.data.inserted} 条，更新 ${res.data.updated} 条（Amazon ${res.data.amazon_count} / AI ${res.data.ai_count}）`,
+        )
+      } else {
+        message.warning(res?.message || '同步完成，但返回异常')
+      }
+    },
+    onError: (err: any) => {
+      message.error(`同步失败：${String(err?.message || err)}`)
+    },
   })
 
   const rows = useMemo(() => {
@@ -97,6 +115,15 @@ export default function News() {
             loading={refreshing}
           >
             刷新
+          </Button>
+          <Button
+            type="primary"
+            onClick={() => {
+              refreshMutation.mutate()
+            }}
+            loading={refreshMutation.isLoading}
+          >
+            同步今日新闻
           </Button>
         </Space>
       }
