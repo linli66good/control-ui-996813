@@ -273,6 +273,7 @@ export type MonitorTarget = {
   country: string
   asin: string
   enabled: number
+  notify_enabled?: number
   note: string
   created_at: string
   updated_at: string
@@ -328,6 +329,7 @@ export async function createMonitorTarget(payload: {
   country: string
   asin: string
   note?: string
+  notify_enabled?: boolean
 }) {
   const { data } = await http.post('/v1/monitor/create', payload)
   return data

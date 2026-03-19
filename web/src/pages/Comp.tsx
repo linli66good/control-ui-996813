@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Descriptions, Drawer, Form, Input, Popconfirm, Space, Table, Tag, Typography, message } from 'antd'
+import { Alert, Button, Card, Checkbox, Descriptions, Drawer, Form, Input, Popconfirm, Space, Table, Tag, Typography, message } from 'antd'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
@@ -57,6 +57,7 @@ export default function Comp() {
   const [country, setCountry] = useState('US')
   const [asin, setAsin] = useState('')
   const [note, setNote] = useState('')
+  const [notifyEnabled, setNotifyEnabled] = useState(false)
   const [selectedId, setSelectedId] = useState<number | null>(null)
 
   const listQ = useQuery({ queryKey: ['monitor-list'], queryFn: () => getMonitorList() })
@@ -77,6 +78,7 @@ export default function Comp() {
       message.success('已新增监控目标')
       setAsin('')
       setNote('')
+      setNotifyEnabled(false)
       await listQ.refetch()
     },
     onError: (err) => message.error(String(err)),
@@ -123,7 +125,7 @@ export default function Comp() {
   return (
     <>
       <Card title="竞品监控" style={{ marginBottom: 16 }}>
-        <Form layout="inline" onFinish={() => createM.mutate({ country, asin, note })}>
+        <Form layout="inline" onFinish={() => createM.mutate({ country, asin, note, notify_enabled: notifyEnabled })}>
           <Form.Item label="国家">
             <Input value={country} onChange={(e) => setCountry(e.target.value.toUpperCase())} style={{ width: 100 }} />
           </Form.Item>
@@ -131,7 +133,10 @@ export default function Comp() {
             <Input value={asin} onChange={(e) => setAsin(e.target.value.toUpperCase())} style={{ width: 180 }} />
           </Form.Item>
           <Form.Item label="备注">
-            <Input value={note} onChange={(e) => setNote(e.target.value)} style={{ width: 260 }} />
+            <Input value={note} onChange={(e) => setNote(e.target.value)} style={{ width: 220 }} />
+          </Form.Item>
+          <Form.Item label="通知">
+            <Checkbox checked={notifyEnabled} onChange={(e) => setNotifyEnabled(e.target.checked)}>Feishu</Checkbox>
           </Form.Item>
           <Form.Item>
             <Button type="primary" htmlType="submit" loading={createM.isPending} disabled={!country || !asin}>
@@ -140,7 +145,7 @@ export default function Comp() {
           </Form.Item>
         </Form>
         <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
-          当前已接入真实商品抓取：现在会额外高亮“抓取失败 / 有变化 / 首次建档 / 正常”，方便一眼判断是否要处理。
+          当前已接入真实商品抓取；现在创建监控目标时，也可以直接决定是否启用 Feishu 通知钩子。
         </Typography.Paragraph>
       </Card>
 
@@ -163,6 +168,12 @@ export default function Comp() {
                 const meta = statusMeta(record)
                 return <Tag color={meta.color}>{meta.text}</Tag>
               },
+            },
+            {
+              title: '通知',
+              dataIndex: 'notify_enabled',
+              width: 100,
+              render: (v) => <Tag color={Number(v) ? 'green' : 'default'}>{Number(v) ? 'on' : 'off'}</Tag>,
             },
             { title: '备注', dataIndex: 'note', width: 160 },
             { title: '最近价格', dataIndex: 'price_text', width: 120 },
@@ -212,6 +223,9 @@ export default function Comp() {
                 <Descriptions.Item label="ID">{current.id}</Descriptions.Item>
                 <Descriptions.Item label="国家">{current.country}</Descriptions.Item>
                 <Descriptions.Item label="ASIN">{current.asin}</Descriptions.Item>
+                <Descriptions.Item label="通知开关">
+                  <Tag color={Number(current.notify_enabled) ? 'green' : 'default'}>{Number(current.notify_enabled) ? 'Feishu on' : 'Feishu off'}</Tag>
+                </Descriptions.Item>
                 <Descriptions.Item label="备注">{current.note || '-'}</Descriptions.Item>
               </Descriptions>
             </Card>
