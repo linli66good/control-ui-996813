@@ -21,13 +21,17 @@ function parsePayload(payload: string | null | undefined): Record<string, any> |
   }
 }
 
-function renderChangedTags(changedFields: string | string[] | null | undefined) {
-  const arr = Array.isArray(changedFields)
+function parseChangedFields(changedFields: string | string[] | null | undefined): string[] {
+  return Array.isArray(changedFields)
     ? changedFields
     : String(changedFields || '')
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean)
+}
+
+function renderChangedTags(changedFields: string | string[] | null | undefined) {
+  const arr = parseChangedFields(changedFields)
   if (!arr.length) return <Typography.Text type="secondary">-</Typography.Text>
   return (
     <Space size={[4, 4]} wrap>
@@ -38,6 +42,15 @@ function renderChangedTags(changedFields: string | string[] | null | undefined) 
       ))}
     </Space>
   )
+}
+
+function statusMeta(record: MonitorTarget) {
+  const changed = parseChangedFields(record.latest_changed_fields)
+  if (changed.includes('fetch_error')) return { text: '抓取失败', color: 'red' as const }
+  if (changed.length && !changed.includes('first_capture')) return { text: '有变化', color: 'orange' as const }
+  if (changed.includes('first_capture')) return { text: '首次建档', color: 'blue' as const }
+  if (record.latest_captured_at) return { text: '正常', color: 'green' as const }
+  return { text: '未扫描', color: 'default' as const }
 }
 
 export default function Comp() {
@@ -73,9 +86,14 @@ export default function Comp() {
     mutationFn: runMonitorTarget,
     onSuccess: async (resp, id) => {
       if (resp?.ok) {
-        message.success(`已执行扫描 #${id}`)
+        const changed = parseChangedFields(resp?.data?.changed_fields)
+        if (changed.length && !changed.includes('first_capture')) {
+          message.warning(`扫描完成：#${id} 检测到变化`)
+        } else {
+          message.success(`已执行扫描 #${id}`)
+        }
       } else {
-        message.warning(resp?.message || `扫描完成，但存在异常 #${id}`)
+        message.error(resp?.message || `扫描失败 #${id}`)
       }
       await listQ.refetch()
       if (selectedId) {
@@ -122,7 +140,7 @@ export default function Comp() {
           </Form.Item>
         </Form>
         <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
-          当前已接入真实商品抓取：可手动扫描一次，查看最新标题、价格、抓取模式，以及本次相对上次发生了哪些变化。
+          当前已接入真实商品抓取：现在会额外高亮“抓取失败 / 有变化 / 首次建档 / 正常”，方便一眼判断是否要处理。
         </Typography.Paragraph>
       </Card>
 
@@ -137,13 +155,28 @@ export default function Comp() {
             { title: 'ID', dataIndex: 'id', width: 80 },
             { title: '国家', dataIndex: 'country', width: 90 },
             { title: 'ASIN', dataIndex: 'asin', width: 140 },
-            { title: '备注', dataIndex: 'note', width: 180 },
+            {
+              title: '状态',
+              key: 'status',
+              width: 110,
+              render: (_, record: MonitorTarget) => {
+                const meta = statusMeta(record)
+                return <Tag color={meta.color}>{meta.text}</Tag>
+              },
+            },
+            { title: '备注', dataIndex: 'note', width: 160 },
             { title: '最近价格', dataIndex: 'price_text', width: 120 },
             {
               title: '最近标题',
               dataIndex: 'latest_title',
-              width: 260,
+              width: 240,
               render: (v) => <Typography.Text ellipsis={{ tooltip: String(v || '') }}>{String(v || '')}</Typography.Text>,
+            },
+            {
+              title: '最近变化',
+              dataIndex: 'latest_changed_fields',
+              width: 220,
+              render: (v) => renderChangedTags(v),
             },
             { title: '最近扫描', dataIndex: 'latest_captured_at', width: 180 },
             {
@@ -187,6 +220,11 @@ export default function Comp() {
               {latest ? (
                 <Space direction="vertical" size={12} style={{ width: '100%' }}>
                   <Descriptions bordered size="small" column={1}>
+                    <Descriptions.Item label="状态">
+                      <Tag color={statusMeta({ ...current, latest_changed_fields: latest.changed_fields, latest_captured_at: latest.captured_at }).color}>
+                        {statusMeta({ ...current, latest_changed_fields: latest.changed_fields, latest_captured_at: latest.captured_at }).text}
+                      </Tag>
+                    </Descriptions.Item>
                     <Descriptions.Item label="时间">{latest.captured_at}</Descriptions.Item>
                     <Descriptions.Item label="价格">{latest.price_text || '-'}</Descriptions.Item>
                     <Descriptions.Item label="标题">{latest.title || '-'}</Descriptions.Item>

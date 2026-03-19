@@ -47,7 +47,13 @@ def get_list():
     with connect() as conn:
         rows = conn.execute(
             '''
-            SELECT t.*, s.price_text, s.title AS latest_title, s.captured_at AS latest_captured_at
+            SELECT
+              t.*,
+              s.price_text,
+              s.title AS latest_title,
+              s.captured_at AS latest_captured_at,
+              s.changed_fields AS latest_changed_fields,
+              s.raw_payload AS latest_raw_payload
             FROM monitor_targets t
             LEFT JOIN monitor_snapshots s
               ON s.id = (

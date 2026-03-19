@@ -9,6 +9,7 @@ import {
   getNewsList,
   getRange,
   refreshNews,
+  type MonitorTarget,
 } from '../api/client'
 
 function todayLocalYYYYMMDD(): string {
@@ -36,6 +37,25 @@ function parsePayload(payload: string | null | undefined): Record<string, any> |
   } catch {
     return null
   }
+}
+
+function parseChangedFields(changedFields: string | string[] | null | undefined): string[] {
+  return Array.isArray(changedFields)
+    ? changedFields
+    : String(changedFields || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+}
+
+function monitorStatusMeta(record: MonitorTarget) {
+  const changed = parseChangedFields(record.latest_changed_fields)
+  const payload = parsePayload(record.latest_raw_payload)
+  if (changed.includes('fetch_error') || payload?.error) return { text: '抓取失败', color: 'red' as const }
+  if (changed.length && !changed.includes('first_capture')) return { text: '检测到变化', color: 'orange' as const }
+  if (changed.includes('first_capture')) return { text: '首次建档', color: 'blue' as const }
+  if (record.latest_captured_at) return { text: '正常', color: 'green' as const }
+  return { text: '未扫描', color: 'default' as const }
 }
 
 export default function Dashboard() {
@@ -115,12 +135,14 @@ export default function Dashboard() {
   const latestAnalysis = analysisRows[0]
   const latestAnalysisPayload = parsePayload(latestAnalysis?.input_payload)
   const latestMonitor = monitorRows[0]
+  const latestMonitorStatus = latestMonitor ? monitorStatusMeta(latestMonitor) : { text: '未扫描', color: 'default' as const }
 
   const learnUsingApi = (learnApiQ.data?.data.items || []).length > 0
   const newsUsingApi = (newsApiQ.data?.data.items || []).length > 0
 
   const monitorDoneCount = monitorRows.filter((x) => !!x.latest_captured_at).length
-  const monitorPendingCount = monitorRows.length - monitorDoneCount
+  const monitorFailedCount = monitorRows.filter((x) => monitorStatusMeta(x).text === '抓取失败').length
+  const monitorChangedCount = monitorRows.filter((x) => monitorStatusMeta(x).text === '检测到变化').length
   const analysisSuccessCount = analysisRows.filter((x) => !!parsePayload(x.input_payload)?.fetch_ok).length
 
   return (
@@ -149,6 +171,12 @@ export default function Dashboard() {
           </Col>
         </Row>
       </Card>
+
+      {monitorFailedCount > 0 ? (
+        <Alert showIcon type="error" message={`Monitor 当前有 ${monitorFailedCount} 个抓取失败项`} />
+      ) : monitorChangedCount > 0 ? (
+        <Alert showIcon type="warning" message={`Monitor 当前有 ${monitorChangedCount} 个检测到变化的目标`} />
+      ) : null}
 
       <Row gutter={[16, 16]}>
         <Col xs={24} md={12} xl={6}>
@@ -184,10 +212,13 @@ export default function Dashboard() {
         </Col>
 
         <Col xs={24} md={12} xl={6}>
-          <Card title="Monitor 监控状态" extra={<Tag color={monitorPendingCount ? 'gold' : 'green'}>{monitorPendingCount ? '有未扫项' : '已覆盖'}</Tag>}>
+          <Card title="Monitor 监控状态" extra={<Tag color={latestMonitorStatus.color}>{latestMonitorStatus.text}</Tag>}>
             <Statistic title="目标数" value={monitorRows.length} />
             <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 4 }}>
               已有快照：{monitorDoneCount}
+            </Typography.Paragraph>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 4 }}>
+              失败项：{monitorFailedCount} ｜ 变化项：{monitorChangedCount}
             </Typography.Paragraph>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
               最近目标：{latestMonitor ? `${latestMonitor.country} / ${latestMonitor.asin}` : '-'}
@@ -260,16 +291,22 @@ export default function Dashboard() {
                   size="small"
                   dataSource={monitorRows.slice(0, 5)}
                   locale={{ emptyText: '还没有 monitor 目标' }}
-                  renderItem={(item) => (
-                    <List.Item>
-                      <Space direction="vertical" size={0} style={{ width: '100%' }}>
-                        <Typography.Text>{item.country} / {item.asin}</Typography.Text>
-                        <Typography.Text type="secondary">
-                          最近扫描：{item.latest_captured_at || '未扫描'} ｜ 价格：{item.price_text || '-'}
-                        </Typography.Text>
-                      </Space>
-                    </List.Item>
-                  )}
+                  renderItem={(item) => {
+                    const status = monitorStatusMeta(item)
+                    return (
+                      <List.Item>
+                        <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                          <Space>
+                            <Typography.Text>{item.country} / {item.asin}</Typography.Text>
+                            <Tag color={status.color}>{status.text}</Tag>
+                          </Space>
+                          <Typography.Text type="secondary">
+                            最近扫描：{item.latest_captured_at || '未扫描'} ｜ 价格：{item.price_text || '-'}
+                          </Typography.Text>
+                        </Space>
+                      </List.Item>
+                    )
+                  }}
                 />
               </div>
 

@@ -223,6 +223,8 @@ export type MonitorTarget = {
   price_text?: string
   latest_title?: string
   latest_captured_at?: string
+  latest_changed_fields?: string
+  latest_raw_payload?: string
 }
 
 export type MonitorSnapshot = {
