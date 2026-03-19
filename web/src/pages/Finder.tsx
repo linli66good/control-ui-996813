@@ -1,8 +1,8 @@
-import { Alert, Button, Card, Col, Input, Row, Select, Space, Table, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Col, Input, Row, Select, Space, Table, Tag, Typography, message } from 'antd'
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { getInputsAsins, type InputAsinItem } from '../api/client'
+import { createMonitorTarget, getInputsAsins, type InputAsinItem } from '../api/client'
 
 function siteColor(country: string) {
   switch (String(country || '').toUpperCase()) {
@@ -30,10 +30,23 @@ function rankColor(rank: string) {
 export default function Finder() {
   const [countryFilter, setCountryFilter] = useState<string>('ALL')
   const [keyword, setKeyword] = useState('')
+  const [creatingKey, setCreatingKey] = useState('')
 
   const q = useQuery({
     queryKey: ['inputs-asins', 'finder'],
     queryFn: getInputsAsins,
+  })
+
+  const createMonitorM = useMutation({
+    mutationFn: createMonitorTarget,
+    onSuccess: () => {
+      message.success('已加入监控，并默认开启 Feishu 通知')
+      setCreatingKey('')
+    },
+    onError: (err) => {
+      message.error(String(err))
+      setCreatingKey('')
+    },
   })
 
   const allRows = useMemo(
@@ -65,6 +78,20 @@ export default function Finder() {
   const rankedCount = rows.filter((r) => String(r.categoryRank || '').trim()).length
   const notedCount = rows.filter((r) => String(r.notes || '').trim()).length
 
+  const quickAddMonitor = (record: InputAsinItem) => {
+    const country = String(record.country || '').toUpperCase()
+    const asin = String(record.asin || '').toUpperCase()
+    const note = String(record.notes || '').trim()
+    const key = `${country}-${asin}`
+    setCreatingKey(key)
+    createMonitorM.mutate({
+      country,
+      asin,
+      note,
+      notify_enabled: true,
+    })
+  }
+
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Card
@@ -85,7 +112,7 @@ export default function Finder() {
           message={allRows.length ? `已接入真实选品池：${allRows.length} 个启用 ASIN` : q.isError ? '选品池读取失败' : '当前还没有启用 ASIN'}
           description={
             allRows.length
-              ? '现在已经支持按站点筛选、按 ASIN/备注/Rank 搜索。下一步如果要继续深化，再叠加评分、去重、竞品密度、利润/物流约束都可以。'
+              ? '现在已经支持按站点筛选、按 ASIN/备注/Rank 搜索，也支持一键带参去分析/监控，或直接加入监控并默认开启通知。'
               : q.isError
                 ? String(q.error)
                 : '请先去 Inputs_ASIN 维护并启用选品对象。'
@@ -139,7 +166,7 @@ export default function Finder() {
           dataSource={rows}
           loading={q.isLoading || q.isFetching}
           pagination={{ pageSize: 20 }}
-          scroll={{ x: 1300 }}
+          scroll={{ x: 1480 }}
           locale={{ emptyText: q.isError ? '读取失败' : '暂无匹配对象' }}
           columns={[
             {
@@ -170,16 +197,26 @@ export default function Finder() {
             {
               title: '后续动作',
               key: 'actions',
-              width: 260,
+              width: 360,
               fixed: 'right',
               render: (_: unknown, record: InputAsinItem) => {
                 const country = encodeURIComponent(String(record.country || '').toUpperCase())
                 const asin = encodeURIComponent(String(record.asin || '').toUpperCase())
+                const key = `${String(record.country || '').toUpperCase()}-${String(record.asin || '').toUpperCase()}`
                 return (
                   <Space wrap>
                     <Link to={`/analysis?country=${country}&asin=${asin}`}>分析</Link>
                     <Link to={`/comp?country=${country}&asin=${asin}`}>监控</Link>
-                    <Link to={`/inventory`}>库存</Link>
+                    <Button
+                      size="small"
+                      type="link"
+                      loading={createMonitorM.isPending && creatingKey === key}
+                      onClick={() => quickAddMonitor(record)}
+                      style={{ paddingInline: 0 }}
+                    >
+                      加监控+通知
+                    </Button>
+                    <Link to="/inventory">库存</Link>
                   </Space>
                 )
               },
