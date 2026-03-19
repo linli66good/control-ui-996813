@@ -417,45 +417,90 @@ def compare_snapshot(previous: dict[str, Any] | None, current: ProductSnapshot) 
 
 
 def build_analysis_report(snapshot: ProductSnapshot, note: str | None = None) -> str:
-    bullets = snapshot.bullets[:5]
+    bullets = [b.strip() for b in snapshot.bullets[:5] if b and b.strip()]
     bullet_text = '\n'.join(f'- {b}' for b in bullets) if bullets else '- 暂未稳定提取到卖点要点'
-    aplus_summary = snapshot.a_plus_text[:500] if snapshot.a_plus_text else '暂无明显 A+ 文本提取结果'
-    desc_summary = snapshot.description[:400] if snapshot.description else '暂无明显描述文本提取结果'
+    aplus_summary = (snapshot.a_plus_text or '').strip()[:600]
+    desc_summary = (snapshot.description or '').strip()[:500]
 
     price_line = snapshot.price_text or '未稳定提取到价格'
     title_line = snapshot.title or '未稳定提取到标题'
     source_mode = snapshot.raw_payload.get('source_mode', 'unknown')
 
+    title_lower = title_line.lower()
+    bullet_join = ' '.join(bullets).lower()
+    text_pool = f"{title_lower} {bullet_join} {(snapshot.description or '').lower()} {(snapshot.a_plus_text or '').lower()}"
+
+    scenario_signals: list[str] = []
+    if any(k in text_pool for k in ['home', 'room', 'bedroom', 'office', 'kitchen', 'desk', 'car', 'travel', 'indoor', 'outdoor']):
+        scenario_signals.append('场景词较多，偏向按使用环境做转化。')
+    if any(k in text_pool for k in ['gift', 'kids', 'family', 'student', 'parent', 'wife', 'husband']):
+        scenario_signals.append('人群词较明显，页面在强调送礼/家庭/特定用户。')
+    if any(k in text_pool for k in ['alexa', 'smart', 'wireless', 'bluetooth', 'wifi', 'app']):
+        scenario_signals.append('功能词偏技术/智能能力，用户会关注兼容性和使用门槛。')
+    if not scenario_signals:
+        scenario_signals.append('当前页面更像通用卖点陈列，场景定向表达不算特别强。')
+
+    risk_signals: list[str] = []
+    if not snapshot.price_text:
+        risk_signals.append('价格未稳定提取，后续做价格带对比时要补一次复核。')
+    if len(bullets) < 3:
+        risk_signals.append('卖点提取偏少，可能是页面结构不稳或正文信息本身较弱。')
+    if source_mode != 'direct_html':
+        risk_signals.append('本次不是直抓正文，属于回退结果，细节完整性要谨慎看。')
+    if len(title_line) >= 140:
+        risk_signals.append('标题偏长，可能存在关键词堆叠，需要拆开看主次信息。')
+    if not risk_signals:
+        risk_signals.append('当前页面结构相对稳定，可先作为基础竞品页做横向对比。')
+
+    idea_lines: list[str] = []
+    if bullets:
+        idea_lines.append('先把对方 bullets 的前 3 个卖点与你自己的主卖点逐项对比，看是否撞位。')
+    if snapshot.price_text:
+        idea_lines.append('已有价格，可直接纳入价格带对比，判断自己是该打高配、高性价比还是差异位。')
+    else:
+        idea_lines.append('价格暂未抓稳，先别急着做价格结论，建议补一次人工核对页面。')
+    idea_lines.append('标题、描述、A+ 三块一起看，比单看标题更容易判断对方真正主打什么。')
+    if any(k in text_pool for k in ['smart', 'alexa', 'bluetooth', 'wifi', 'app']):
+        idea_lines.append('如果你做的是同类智能型产品，下一步优先补兼容性、连接稳定性、使用门槛的差异比较。')
+
+    conclusion = '这条竞品当前更适合先做“页面表达拆解 + 卖点优先级对比”，再决定是否继续深挖评论、关键词和价格策略。'
+    if source_mode != 'direct_html':
+        conclusion = '这条竞品已拿到可读结果，但因为本次用了回退抓取，适合先做方向判断，不适合直接当最终证据。'
+
     return f'''# {snapshot.country} / {snapshot.asin} 竞品分析报告
 
-## 1. 页面基础信息
+## 1. 商品基础信息
 - 链接：{snapshot.product_url}
 - 标题：{title_line}
 - 价格：{price_line}
 - 主图：{snapshot.main_image_url or '未提取'}
 - 抓取模式：{source_mode}
+- 备注：{note or '-'}
 
-## 2. 核心卖点提炼
+## 2. 卖点提炼
 {bullet_text}
 
 ## 3. 页面表达观察
 - 标题观察：当前标题更偏向 {('长尾关键词覆盖' if len(title_line) >= 80 else '简洁主卖点表达')}。
-- 描述观察：{desc_summary}
-- A+观察：{aplus_summary}
+- 描述观察：{desc_summary or '暂无明显描述文本提取结果'}
+- A+观察：{aplus_summary or '暂无明显 A+ 文本提取结果'}
 
-## 4. 可执行对比建议
-- 先对比这条竞品的标题结构、主图表达、核心卖点顺序是否与你当前商品重叠。
-- 如果对方价格可稳定提取，优先把它放进价格带对比；如果价格抓不到，说明页面结构不稳定，后续要补更强抓取方式。
-- 重点检查 bullets 中是否反复出现同一类功能词、材质词、场景词，这通常就是它当前主打的转化方向。
-- 如果 A+ 文本较多，说明它更强调品牌讲述或教育式转化，可以继续补抓模块做更深拆解。
+## 4. 场景与人群信号
+{chr(10).join(f'- {x}' for x in scenario_signals)}
 
-## 5. 风险与限制
+## 5. 风险点
+{chr(10).join(f'- {x}' for x in risk_signals)}
+
+## 6. 可执行建议
+{chr(10).join(f'- {x}' for x in idea_lines)}
+
+## 7. 结论
+- {conclusion}
+
+## 8. 说明
 - 当前版本基于公开商品页做轻量抓取，不保证拿到完整评论、销量、BSR、广告位等数据。
 - Amazon 页面存在地区、语言、风控、动态结构差异，个别字段可能抓不到或抓偏。
 - 更深层的关键词/评论/排名分析，后续要补独立数据源或更稳定采集器。
-
-## 6. 备注
-- note: {note or ''}
 '''
 
 

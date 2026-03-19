@@ -40,6 +40,7 @@ def create_report(req: AnalysisCreateReq):
             'bullets': snapshot.bullets,
             'a_plus_text': snapshot.a_plus_text,
             'description': snapshot.description,
+            'source_mode': snapshot.raw_payload.get('source_mode', ''),
             'fetch_ok': True,
         }
         message = 'analysis created'
