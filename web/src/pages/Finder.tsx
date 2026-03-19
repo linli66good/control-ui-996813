@@ -1,5 +1,5 @@
-import { Alert, Button, Card, Col, Row, Space, Table, Tag, Typography } from 'antd'
-import { useMemo } from 'react'
+import { Alert, Button, Card, Col, Input, Row, Select, Space, Table, Tag, Typography } from 'antd'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { getInputsAsins, type InputAsinItem } from '../api/client'
@@ -28,12 +28,15 @@ function rankColor(rank: string) {
 }
 
 export default function Finder() {
+  const [countryFilter, setCountryFilter] = useState<string>('ALL')
+  const [keyword, setKeyword] = useState('')
+
   const q = useQuery({
     queryKey: ['inputs-asins', 'finder'],
     queryFn: getInputsAsins,
   })
 
-  const rows = useMemo(
+  const allRows = useMemo(
     () =>
       (q.data?.items || []).map((item: InputAsinItem, idx: number) => ({
         key: `${item.country}-${item.asin}-${idx}`,
@@ -41,6 +44,22 @@ export default function Finder() {
       })),
     [q.data],
   )
+
+  const countryOptions = useMemo(() => {
+    const countries = Array.from(new Set(allRows.map((r) => String(r.country || '').toUpperCase()).filter(Boolean))).sort()
+    return [{ label: '全部站点', value: 'ALL' }, ...countries.map((c) => ({ label: c, value: c }))]
+  }, [allRows])
+
+  const rows = useMemo(() => {
+    const kw = keyword.trim().toLowerCase()
+    return allRows.filter((r) => {
+      const matchCountry = countryFilter === 'ALL' || String(r.country || '').toUpperCase() === countryFilter
+      const matchKeyword = !kw || [r.asin, r.categoryRank, r.notes]
+        .map((v) => String(v || '').toLowerCase())
+        .some((v) => v.includes(kw))
+      return matchCountry && matchKeyword
+    })
+  }, [allRows, countryFilter, keyword])
 
   const countryCount = new Set(rows.map((r) => String(r.country || '').toUpperCase())).size
   const rankedCount = rows.filter((r) => String(r.categoryRank || '').trim()).length
@@ -63,10 +82,10 @@ export default function Finder() {
         <Alert
           type={rows.length ? 'success' : q.isError ? 'error' : 'info'}
           showIcon
-          message={rows.length ? `已接入真实选品池：${rows.length} 个启用 ASIN` : q.isError ? '选品池读取失败' : '当前还没有启用 ASIN'}
+          message={allRows.length ? `已接入真实选品池：${allRows.length} 个启用 ASIN` : q.isError ? '选品池读取失败' : '当前还没有启用 ASIN'}
           description={
-            rows.length
-              ? '当前 Finder 先聚焦真实对象池。下一步如果要继续深化，再叠加评分、去重、竞品密度、利润/物流约束都可以。'
+            allRows.length
+              ? '现在已经支持按站点筛选、按 ASIN/备注/Rank 搜索。下一步如果要继续深化，再叠加评分、去重、竞品密度、利润/物流约束都可以。'
               : q.isError
                 ? String(q.error)
                 : '请先去 Inputs_ASIN 维护并启用选品对象。'
@@ -77,7 +96,7 @@ export default function Finder() {
       <Row gutter={16}>
         <Col xs={24} md={8}>
           <Card size="small">
-            <Typography.Text type="secondary">启用 ASIN 数</Typography.Text>
+            <Typography.Text type="secondary">筛选后对象数</Typography.Text>
             <Typography.Title level={3} style={{ margin: '8px 0 0' }}>{rows.length}</Typography.Title>
           </Card>
         </Col>
@@ -95,36 +114,23 @@ export default function Finder() {
         </Col>
       </Row>
 
-      <Card title="当前 Finder 能做什么">
-        <Row gutter={16}>
-          <Col xs={24} md={8}>
-            <Card size="small" title="现在已接通">
-              <ul style={{ paddingLeft: 18, marginBottom: 0 }}>
-                <li>真实 ASIN 池展示</li>
-                <li>按国家查看对象</li>
-                <li>记录类目排名和备注</li>
-              </ul>
-            </Card>
-          </Col>
-          <Col xs={24} md={8}>
-            <Card size="small" title="可直接衔接">
-              <ul style={{ paddingLeft: 18, marginBottom: 0 }}>
-                <li>去 /analysis 做单品分析</li>
-                <li>去 /comp 建竞品监控</li>
-                <li>去 /inventory 看库存覆盖</li>
-              </ul>
-            </Card>
-          </Col>
-          <Col xs={24} md={8}>
-            <Card size="small" title="下一步可增强">
-              <ul style={{ paddingLeft: 18, marginBottom: 0 }}>
-                <li>选品打分</li>
-                <li>利润/物流约束</li>
-                <li>关键词/趋势联动</li>
-              </ul>
-            </Card>
-          </Col>
-        </Row>
+      <Card title="筛选条件">
+        <Space wrap>
+          <Select
+            style={{ width: 180 }}
+            value={countryFilter}
+            options={countryOptions}
+            onChange={setCountryFilter}
+          />
+          <Input
+            allowClear
+            style={{ width: 320 }}
+            placeholder="搜 ASIN / Category Rank / 备注"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+          />
+          <Button onClick={() => { setCountryFilter('ALL'); setKeyword('') }}>重置筛选</Button>
+        </Space>
       </Card>
 
       <Card title="真实选品对象池" extra={<Space><Tag color="green">真实数据</Tag><Tag>Inputs_ASIN</Tag></Space>}>
@@ -134,7 +140,7 @@ export default function Finder() {
           loading={q.isLoading || q.isFetching}
           pagination={{ pageSize: 20 }}
           scroll={{ x: 1300 }}
-          locale={{ emptyText: q.isError ? '读取失败' : '暂无启用 ASIN' }}
+          locale={{ emptyText: q.isError ? '读取失败' : '暂无匹配对象' }}
           columns={[
             {
               title: '国家',
