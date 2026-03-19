@@ -35,6 +35,22 @@ export async function getInputsAsins(): Promise<InputsAsinsResp> {
   return data
 }
 
+export type InputKeywordItem = {
+  country: string
+  keyword: string
+  tag: string
+  amz123EntryUrl: string
+  notes: string
+}
+
+export type InputsKeywordsResp = {
+  items: InputKeywordItem[]
+}
+
+export async function getInputsKeywords(): Promise<InputsKeywordsResp> {
+  const { data } = await http.get<InputsKeywordsResp>('/v1/inputs/keywords')
+  return data
+}
 
 export type InventoryItem = {
   id: number
