@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
 from workers.common.db import connect  # noqa: E402
 from workers.common.helpers import now_iso  # noqa: E402
 from workers.common.logger import get_logger  # noqa: E402
+from workers.common.notify import build_monitor_message, send_feishu_webhook, should_notify  # noqa: E402
 from api.app.services.amazon_product import ProductFetchError, compare_snapshot, extract_snapshot  # noqa: E402
 
 logger = get_logger('scan_targets')
@@ -57,6 +58,28 @@ def _insert_snapshot(conn, *, target_id: int, now: str, price_text: str, title: 
     conn.execute('UPDATE monitor_targets SET updated_at = ? WHERE id = ?', (now, target_id))
 
 
+def _notify_if_needed(row, *, changed_fields: list[str] | str, title: str, price_text: str, product_url: str, error: str = '') -> bool:
+    if not should_notify(notify_enabled=row['notify_enabled'], changed_fields=changed_fields):
+        return False
+    text = build_monitor_message(
+        country=str(row['country'] or '').upper(),
+        asin=str(row['asin'] or '').upper(),
+        note=str(row['note'] or ''),
+        changed_fields=changed_fields,
+        title=title,
+        price_text=price_text,
+        product_url=product_url,
+        error=error,
+    )
+    try:
+        ok = send_feishu_webhook(text)
+        logger.info('monitor notify sent=%s target_id=%s', ok, row['id'])
+        return ok
+    except Exception as e:
+        logger.warning('monitor notify failed target_id=%s err=%s', row['id'], e)
+        return False
+
+
 def scan_target(conn, row) -> dict:
     target_id = int(row['id'])
     country = str(row['country'] or '').upper()
@@ -80,6 +103,13 @@ def scan_target(conn, row) -> dict:
             changed_fields=changed_fields,
             raw_payload=raw_payload,
         )
+        notified = _notify_if_needed(
+            row,
+            changed_fields=changed_fields,
+            title=snapshot.title,
+            price_text=snapshot.price_text,
+            product_url=snapshot.product_url,
+        )
         result = {
             'target_id': target_id,
             'country': country,
@@ -90,6 +120,7 @@ def scan_target(conn, row) -> dict:
             'title': snapshot.title,
             'price_text': snapshot.price_text,
             'source_mode': snapshot.raw_payload.get('source_mode', ''),
+            'notified': notified,
         }
         logger.info('monitor target scanned: %s', result)
         return result
@@ -106,6 +137,14 @@ def scan_target(conn, row) -> dict:
             changed_fields='fetch_error',
             raw_payload=raw_payload,
         )
+        notified = _notify_if_needed(
+            row,
+            changed_fields='fetch_error',
+            title=f'{country} / {asin} capture failed',
+            price_text='',
+            product_url='',
+            error=str(e),
+        )
         result = {
             'target_id': target_id,
             'country': country,
@@ -113,6 +152,7 @@ def scan_target(conn, row) -> dict:
             'ok': False,
             'status': 'failed',
             'error': str(e),
+            'notified': notified,
         }
         logger.warning('monitor target scan failed: %s', result)
         return result
@@ -144,12 +184,14 @@ def run_scan(target_id: int | None = None, only_enabled: bool = True) -> dict:
         'total_targets': len(rows),
         'success': sum(1 for x in results if x.get('ok')),
         'failed': sum(1 for x in results if not x.get('ok')),
+        'notified': sum(1 for x in results if x.get('notified')),
         'results': results,
     }
     logger.info('monitor batch scan done: %s', {
         'total_targets': summary['total_targets'],
         'success': summary['success'],
         'failed': summary['failed'],
+        'notified': summary['notified'],
     })
     return summary
 

@@ -14,6 +14,7 @@ class MonitorCreateReq(BaseModel):
     country: str
     asin: str
     note: str | None = None
+    notify_enabled: bool = False
 
 
 class MonitorRunReq(BaseModel):
@@ -76,14 +77,15 @@ def create_target(req: MonitorCreateReq):
     with connect() as conn:
         conn.execute(
             '''
-            INSERT INTO monitor_targets (country, asin, enabled, note, created_at, updated_at)
-            VALUES (?, ?, 1, ?, ?, ?)
+            INSERT INTO monitor_targets (country, asin, enabled, notify_enabled, note, created_at, updated_at)
+            VALUES (?, ?, 1, ?, ?, ?, ?)
             ON CONFLICT(country, asin) DO UPDATE SET
               note = excluded.note,
               enabled = 1,
+              notify_enabled = excluded.notify_enabled,
               updated_at = excluded.updated_at
             ''',
-            (country, asin, req.note or '', now, now),
+            (country, asin, 1 if req.notify_enabled else 0, req.note or '', now, now),
         )
         row = conn.execute(
             'SELECT * FROM monitor_targets WHERE country = ? AND asin = ?',

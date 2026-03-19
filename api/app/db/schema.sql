@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS monitor_targets (
   country TEXT NOT NULL,
   asin TEXT NOT NULL,
   enabled INTEGER DEFAULT 1,
+  notify_enabled INTEGER DEFAULT 0,
   note TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL

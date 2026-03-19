@@ -23,4 +23,9 @@ def init_db() -> None:
     schema = SCHEMA_PATH.read_text(encoding='utf-8')
     with connect() as conn:
         conn.executescript(schema)
+        try:
+            conn.execute('ALTER TABLE monitor_targets ADD COLUMN notify_enabled INTEGER DEFAULT 0')
+        except sqlite3.OperationalError:
+            # column already exists or table missing; ignore
+            pass
         conn.commit()
