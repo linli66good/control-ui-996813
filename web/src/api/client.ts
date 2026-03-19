@@ -19,6 +19,23 @@ export async function getRange(A1: string): Promise<RangeResp> {
   return data
 }
 
+export type InputAsinItem = {
+  country: string
+  asin: string
+  categoryRank: string
+  notes: string
+}
+
+export type InputsAsinsResp = {
+  items: InputAsinItem[]
+}
+
+export async function getInputsAsins(): Promise<InputsAsinsResp> {
+  const { data } = await http.get<InputsAsinsResp>('/v1/inputs/asins')
+  return data
+}
+
+
 export type LearnCard = {
   id: number
   date: string
