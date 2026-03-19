@@ -1,7 +1,15 @@
-import { Alert, Card, Col, List, Row, Statistic, Tag, Typography } from 'antd'
-import { useQuery } from '@tanstack/react-query'
-import { getLearnList, getNewsList, getRange, getTabs } from '../api/client'
+import { Alert, Button, Card, Col, List, Row, Space, Statistic, Tag, Typography, message } from 'antd'
 import { useMemo } from 'react'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import {
+  generateDailyLearn,
+  getAnalysisList,
+  getLearnList,
+  getMonitorList,
+  getNewsList,
+  getRange,
+  refreshNews,
+} from '../api/client'
 
 function todayLocalYYYYMMDD(): string {
   const d = new Date()
@@ -21,10 +29,17 @@ function rowsFromRange(values: string[][] | null) {
   })
 }
 
+function parsePayload(payload: string | null | undefined): Record<string, any> | null {
+  if (!payload) return null
+  try {
+    return JSON.parse(payload)
+  } catch {
+    return null
+  }
+}
+
 export default function Dashboard() {
   const today = todayLocalYYYYMMDD()
-
-  const tabsQ = useQuery({ queryKey: ['tabs'], queryFn: getTabs })
 
   const learnApiQ = useQuery({
     queryKey: ['learn-list', 'dashboard', today],
@@ -33,6 +48,14 @@ export default function Dashboard() {
   const newsApiQ = useQuery({
     queryKey: ['news-list', 'dashboard', today],
     queryFn: () => getNewsList({ page: 1, page_size: 20, date: today }),
+  })
+  const analysisQ = useQuery({
+    queryKey: ['analysis-list', 'dashboard'],
+    queryFn: () => getAnalysisList({ page: 1, page_size: 10 }),
+  })
+  const monitorQ = useQuery({
+    queryKey: ['monitor-list', 'dashboard'],
+    queryFn: () => getMonitorList(),
   })
 
   const learnSheetQ = useQuery({
@@ -46,119 +69,235 @@ export default function Dashboard() {
     enabled: !(newsApiQ.data?.data.items?.length ?? 0),
   })
 
+  const learnSyncM = useMutation({
+    mutationFn: generateDailyLearn,
+    onSuccess: async (resp) => {
+      message.success(resp.message || 'Learn 同步完成')
+      await Promise.all([learnApiQ.refetch(), learnSheetQ.refetch()])
+    },
+    onError: (err) => message.error(String(err)),
+  })
+
+  const newsSyncM = useMutation({
+    mutationFn: refreshNews,
+    onSuccess: async (resp) => {
+      message.success(resp.message || 'News 同步完成')
+      await Promise.all([newsApiQ.refetch(), newsSheetQ.refetch()])
+    },
+    onError: (err) => message.error(String(err)),
+  })
+
   const learnRows = useMemo(() => {
     const apiItems = learnApiQ.data?.data.items || []
     if (apiItems.length) {
-      return apiItems.map((item) => ({ key: `api-${item.id}`, title: item.title }))
+      return apiItems.map((item) => ({ key: `api-${item.id}`, title: item.title, score: item.score }))
     }
     const rows = rowsFromRange(learnSheetQ.data?.values || null)
     return rows
       .filter((x) => String(x['Date'] || '') === today)
-      .map((x, idx) => ({ key: `sheet-${idx}`, title: String(x['Title'] || '') }))
+      .map((x, idx) => ({ key: `sheet-${idx}`, title: String(x['Title'] || ''), score: Number(x['Score'] || 0) }))
   }, [learnApiQ.data, learnSheetQ.data, today])
 
   const newsRows = useMemo(() => {
     const apiItems = newsApiQ.data?.data.items || []
     if (apiItems.length) {
-      return apiItems.map((item) => ({ key: `api-${item.id}`, title: item.title }))
+      return apiItems.map((item) => ({ key: `api-${item.id}`, title: item.title, type: item.news_type }))
     }
     const rows = rowsFromRange(newsSheetQ.data?.values || null)
     return rows
       .filter((x) => String(x['日期(UTC+8)'] || '') === today)
-      .map((x, idx) => ({ key: `sheet-${idx}`, title: String(x['标题'] || '') }))
+      .map((x, idx) => ({ key: `sheet-${idx}`, title: String(x['标题'] || ''), type: String(x['Source'] || x['类型'] || 'other') }))
   }, [newsApiQ.data, newsSheetQ.data, today])
+
+  const analysisRows = useMemo(() => analysisQ.data?.data.items || [], [analysisQ.data])
+  const monitorRows = useMemo(() => monitorQ.data?.data.items || [], [monitorQ.data])
+
+  const latestAnalysis = analysisRows[0]
+  const latestAnalysisPayload = parsePayload(latestAnalysis?.input_payload)
+  const latestMonitor = monitorRows[0]
 
   const learnUsingApi = (learnApiQ.data?.data.items || []).length > 0
   const newsUsingApi = (newsApiQ.data?.data.items || []).length > 0
 
-  return (
-    <Row gutter={[16, 16]}>
-      <Col xs={24} lg={16}>
-        <Row gutter={[16, 16]}>
-          <Col xs={24} md={12}>
-            <Card
-              title="自动学习（今日）"
-              bordered
-              extra={
-                <>
-                  <Tag color={learnUsingApi ? 'green' : 'gold'}>{learnUsingApi ? 'API' : 'Sheet'}</Tag>
-                  <a href="/learn">进入</a>
-                </>
-              }
-            >
-              {learnApiQ.isError && !learnUsingApi ? (
-                <Alert type="warning" showIcon message="Learn API 暂不可用，已回退到 Sheet。" style={{ marginBottom: 12 }} />
-              ) : null}
-              <Statistic value={learnRows.length} title="今日条目数" />
-              <List
-                style={{ marginTop: 12 }}
-                size="small"
-                dataSource={learnRows.slice(0, 3)}
-                renderItem={(item) => (
-                  <List.Item>
-                    <Typography.Text ellipsis>{item.title}</Typography.Text>
-                  </List.Item>
-                )}
-              />
-            </Card>
-          </Col>
+  const monitorDoneCount = monitorRows.filter((x) => !!x.latest_captured_at).length
+  const monitorPendingCount = monitorRows.length - monitorDoneCount
+  const analysisSuccessCount = analysisRows.filter((x) => !!parsePayload(x.input_payload)?.fetch_ok).length
 
+  return (
+    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+      <Card>
+        <Row gutter={[16, 16]} align="middle">
           <Col xs={24} md={12}>
-            <Card
-              title="每日新闻（今日）"
-              bordered
-              extra={
-                <>
-                  <Tag color={newsUsingApi ? 'green' : 'gold'}>{newsUsingApi ? 'API' : 'Sheet'}</Tag>
-                  <a href="/news">进入</a>
-                </>
-              }
-            >
-              {newsApiQ.isError && !newsUsingApi ? (
-                <Alert type="warning" showIcon message="News API 暂不可用，已回退到 Sheet。" style={{ marginBottom: 12 }} />
-              ) : null}
-              <Statistic value={newsRows.length} title="今日条目数" />
-              <List
-                style={{ marginTop: 12 }}
-                size="small"
-                dataSource={newsRows.slice(0, 3)}
-                renderItem={(item) => (
-                  <List.Item>
-                    <Typography.Text ellipsis>{item.title}</Typography.Text>
-                  </List.Item>
-                )}
-              />
-            </Card>
+            <Typography.Title level={4} style={{ margin: 0 }}>
+              Control UI 总览
+            </Typography.Title>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              今天：{today} ｜ 现在先把 learn / news / monitor / analysis 四块统一收口。
+            </Typography.Paragraph>
+          </Col>
+          <Col xs={24} md={12}>
+            <Space wrap style={{ justifyContent: 'flex-end', width: '100%' }}>
+              <Button onClick={() => learnApiQ.refetch()}>刷新 Learn</Button>
+              <Button onClick={() => newsApiQ.refetch()}>刷新 News</Button>
+              <Button type="primary" loading={learnSyncM.isPending} onClick={() => learnSyncM.mutate()}>
+                同步 Learn
+              </Button>
+              <Button type="primary" loading={newsSyncM.isPending} onClick={() => newsSyncM.mutate()}>
+                同步 News
+              </Button>
+            </Space>
           </Col>
         </Row>
-      </Col>
+      </Card>
 
-      <Col xs={24} lg={8}>
-        <Card title="主表 Tabs" bordered>
-          {tabsQ.isLoading ? (
-            <Typography.Text>加载中…</Typography.Text>
-          ) : tabsQ.isError ? (
-            <Typography.Text type="danger">加载失败：{String(tabsQ.error)}</Typography.Text>
-          ) : (
-            <List
-              size="small"
-              dataSource={tabsQ.data?.tabs || []}
-              renderItem={(item) => (
-                <List.Item>
-                  <Typography.Text>{item.title}</Typography.Text>
-                </List.Item>
-              )}
-            />
-          )}
-        </Card>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} md={12} xl={6}>
+          <Card
+            title="Learn 今日状态"
+            extra={<Tag color={learnUsingApi ? 'green' : 'gold'}>{learnUsingApi ? 'API' : 'Sheet'}</Tag>}
+          >
+            {learnApiQ.isError && !learnUsingApi ? (
+              <Alert type="warning" showIcon message="Learn API 暂不可用，已回退到 Sheet。" style={{ marginBottom: 12 }} />
+            ) : null}
+            <Statistic title="今日条目" value={learnRows.length} />
+            <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 8 }}>
+              最近 Top：{learnRows[0]?.title || '-'}
+            </Typography.Paragraph>
+            <a href="/learn">进入 Learn</a>
+          </Card>
+        </Col>
 
-        <Card style={{ marginTop: 16 }} title="今天" bordered>
-          <Typography.Paragraph style={{ marginBottom: 0 }}>{today}</Typography.Paragraph>
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            Dashboard 已切为 API 优先 / Sheet 保底。
-          </Typography.Paragraph>
-        </Card>
-      </Col>
-    </Row>
+        <Col xs={24} md={12} xl={6}>
+          <Card
+            title="News 今日状态"
+            extra={<Tag color={newsUsingApi ? 'green' : 'gold'}>{newsUsingApi ? 'API' : 'Sheet'}</Tag>}
+          >
+            {newsApiQ.isError && !newsUsingApi ? (
+              <Alert type="warning" showIcon message="News API 暂不可用，已回退到 Sheet。" style={{ marginBottom: 12 }} />
+            ) : null}
+            <Statistic title="今日新闻" value={newsRows.length} />
+            <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 8 }}>
+              最近一条：{newsRows[0]?.title || '-'}
+            </Typography.Paragraph>
+            <a href="/news">进入 News</a>
+          </Card>
+        </Col>
+
+        <Col xs={24} md={12} xl={6}>
+          <Card title="Monitor 监控状态" extra={<Tag color={monitorPendingCount ? 'gold' : 'green'}>{monitorPendingCount ? '有未扫项' : '已覆盖'}</Tag>}>
+            <Statistic title="目标数" value={monitorRows.length} />
+            <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 4 }}>
+              已有快照：{monitorDoneCount}
+            </Typography.Paragraph>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+              最近目标：{latestMonitor ? `${latestMonitor.country} / ${latestMonitor.asin}` : '-'}
+            </Typography.Paragraph>
+            <a href="/comp">进入 Monitor</a>
+          </Card>
+        </Col>
+
+        <Col xs={24} md={12} xl={6}>
+          <Card title="Analysis 分析状态" extra={<Tag color={latestAnalysisPayload?.fetch_ok ? 'green' : 'gold'}>{latestAnalysisPayload?.fetch_ok ? '最近成功' : '含回退'}</Tag>}>
+            <Statistic title="累计报告" value={analysisRows.length} />
+            <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 4 }}>
+              成功抓取：{analysisSuccessCount}
+            </Typography.Paragraph>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+              最近分析：{latestAnalysis ? `${latestAnalysis.country} / ${latestAnalysis.asin}` : '-'}
+            </Typography.Paragraph>
+            <a href="/analysis">进入 Analysis</a>
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]}>
+        <Col xs={24} xl={12}>
+          <Card title="Learn / News 最近结果预览">
+            <Space direction="vertical" size={16} style={{ width: '100%' }}>
+              <div>
+                <Typography.Title level={5}>Learn</Typography.Title>
+                <List
+                  size="small"
+                  dataSource={learnRows.slice(0, 3)}
+                  locale={{ emptyText: '今天还没有 learn 数据' }}
+                  renderItem={(item) => (
+                    <List.Item>
+                      <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                        <Typography.Text ellipsis>{item.title}</Typography.Text>
+                        {'score' in item ? <Typography.Text type="secondary">score: {item.score || 0}</Typography.Text> : null}
+                      </Space>
+                    </List.Item>
+                  )}
+                />
+              </div>
+
+              <div>
+                <Typography.Title level={5}>News</Typography.Title>
+                <List
+                  size="small"
+                  dataSource={newsRows.slice(0, 5)}
+                  locale={{ emptyText: '今天还没有 news 数据' }}
+                  renderItem={(item) => (
+                    <List.Item>
+                      <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                        <Typography.Text ellipsis>{item.title}</Typography.Text>
+                        {'type' in item ? <Typography.Text type="secondary">type: {item.type || '-'}</Typography.Text> : null}
+                      </Space>
+                    </List.Item>
+                  )}
+                />
+              </div>
+            </Space>
+          </Card>
+        </Col>
+
+        <Col xs={24} xl={12}>
+          <Card title="Monitor / Analysis 最近结果预览">
+            <Space direction="vertical" size={16} style={{ width: '100%' }}>
+              <div>
+                <Typography.Title level={5}>Monitor</Typography.Title>
+                <List
+                  size="small"
+                  dataSource={monitorRows.slice(0, 5)}
+                  locale={{ emptyText: '还没有 monitor 目标' }}
+                  renderItem={(item) => (
+                    <List.Item>
+                      <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                        <Typography.Text>{item.country} / {item.asin}</Typography.Text>
+                        <Typography.Text type="secondary">
+                          最近扫描：{item.latest_captured_at || '未扫描'} ｜ 价格：{item.price_text || '-'}
+                        </Typography.Text>
+                      </Space>
+                    </List.Item>
+                  )}
+                />
+              </div>
+
+              <div>
+                <Typography.Title level={5}>Analysis</Typography.Title>
+                <List
+                  size="small"
+                  dataSource={analysisRows.slice(0, 5)}
+                  locale={{ emptyText: '还没有 analysis 报告' }}
+                  renderItem={(item) => {
+                    const payload = parsePayload(item.input_payload)
+                    return (
+                      <List.Item>
+                        <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                          <Typography.Text>{item.country} / {item.asin}</Typography.Text>
+                          <Typography.Text type="secondary" ellipsis>
+                            {payload?.title || payload?.error || '无详情'}
+                          </Typography.Text>
+                        </Space>
+                      </List.Item>
+                    )
+                  }}
+                />
+              </div>
+            </Space>
+          </Card>
+        </Col>
+      </Row>
+    </Space>
   )
 }
