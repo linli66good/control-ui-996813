@@ -1,9 +1,16 @@
 from datetime import datetime
+from pathlib import Path
+import sys
 from urllib.parse import urlparse
 
 from fastapi import APIRouter
 
 from ..db.sqlite import connect
+
+ROOT_DIR = Path(__file__).resolve().parents[3]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.append(str(ROOT_DIR))
+
 from workers.learn.sync_learn_cards import sync_learn_cards
 
 router = APIRouter(prefix='/v1/learn', tags=['learn'])

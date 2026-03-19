@@ -1,8 +1,15 @@
 from datetime import datetime
+from pathlib import Path
+import sys
 
 from fastapi import APIRouter
 
 from ..db.sqlite import connect
+
+ROOT_DIR = Path(__file__).resolve().parents[3]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.append(str(ROOT_DIR))
+
 from workers.inventory.sync_inventory_items import sync_inventory_items
 
 router = APIRouter(prefix='/v1/inventory', tags=['inventory'])
