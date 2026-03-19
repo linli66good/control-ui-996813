@@ -1,7 +1,7 @@
-import sqlite3
 from pathlib import Path
+import sqlite3
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 DATA_DIR = ROOT / 'data'
 DB_PATH = DATA_DIR / 'app.db'
 SCHEMA_PATH = ROOT / 'api' / 'app' / 'db' / 'schema.sql'

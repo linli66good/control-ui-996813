@@ -14,3 +14,7 @@ api/.env
 
 # logs
 *.log
+
+# local sqlite / runtime data
+data/
+api/data/

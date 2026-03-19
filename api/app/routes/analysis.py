@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from ..db.sqlite import connect
+from ..services.amazon_product import ProductFetchError, build_analysis_report, extract_snapshot
 
 router = APIRouter(prefix='/v1/analysis', tags=['analysis'])
 
@@ -19,15 +20,40 @@ def _now() -> str:
     return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 
-def _mock_report(country: str, asin: str, note: str | None = None) -> str:
-    return f'''# {country} / {asin} 竞品分析报告\n\n## 产品定位\n- 当前为骨架版报告，后续接入真实抓取与 AI 分析。\n- 建议先核对类目、价格带、核心卖点。\n\n## 差异化观察\n- 可重点比较图片表达、A+ 结构、评论关键词。\n- 可增加国家站点差异和本地化描述对比。\n\n## 风险与机会\n- 需要补足真实价格、评论、销量、关键词趋势数据。\n- 适合作为后续自动分析 worker 的落库目标。\n\n## 备注\n- note: {note or ''}\n'''
-
-
 @router.post('/create')
 def create_report(req: AnalysisCreateReq):
     now = _now()
-    report_markdown = _mock_report(req.country, req.asin, req.note)
-    payload = json.dumps(req.model_dump(), ensure_ascii=False)
+    country = req.country.upper()
+    asin = req.asin.upper()
+
+    try:
+        snapshot = extract_snapshot(country, asin)
+        report_markdown = build_analysis_report(snapshot, req.note)
+        payload = {
+            'country': country,
+            'asin': asin,
+            'note': req.note or '',
+            'product_url': snapshot.product_url,
+            'title': snapshot.title,
+            'price_text': snapshot.price_text,
+            'main_image_url': snapshot.main_image_url,
+            'bullets': snapshot.bullets,
+            'a_plus_text': snapshot.a_plus_text,
+            'description': snapshot.description,
+            'fetch_ok': True,
+        }
+        message = 'analysis created'
+    except ProductFetchError as e:
+        report_markdown = f'''# {country} / {asin} 竞品分析报告\n\n## 抓取状态\n- 当前未能完成真实抓取：{e}\n\n## 建议\n- 稍后重试\n- 更换站点/网络环境\n- 后续补更稳定采集器\n\n## 备注\n- note: {req.note or ''}\n'''
+        payload = {
+            'country': country,
+            'asin': asin,
+            'note': req.note or '',
+            'fetch_ok': False,
+            'error': str(e),
+        }
+        message = 'analysis created with fallback'
+
     with connect() as conn:
         cur = conn.execute(
             '''
@@ -35,14 +61,14 @@ def create_report(req: AnalysisCreateReq):
               country, asin, input_payload, report_markdown, created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?)
             ''',
-            (req.country.upper(), req.asin.upper(), payload, report_markdown, now, now),
+            (country, asin, json.dumps(payload, ensure_ascii=False), report_markdown, now, now),
         )
         report_id = cur.lastrowid
         row = conn.execute('SELECT * FROM analysis_reports WHERE id = ?', (report_id,)).fetchone()
 
     return {
         'ok': True,
-        'message': 'analysis created',
+        'message': message,
         'data': dict(row),
         'meta': {},
     }
