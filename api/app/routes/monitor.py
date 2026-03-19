@@ -21,6 +21,11 @@ class MonitorRunReq(BaseModel):
     target_id: int
 
 
+class MonitorNotifyReq(BaseModel):
+    target_id: int
+    notify_enabled: bool
+
+
 def _now() -> str:
     return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
@@ -100,6 +105,21 @@ def delete_target(target_id: int):
         conn.execute('DELETE FROM monitor_snapshots WHERE target_id = ?', (target_id,))
         conn.execute('DELETE FROM monitor_targets WHERE id = ?', (target_id,))
     return {'ok': True, 'message': 'monitor target deleted', 'data': {'id': target_id}, 'meta': {}}
+
+
+@router.post('/update-notify')
+def update_notify(req: MonitorNotifyReq):
+    now = _now()
+    with connect() as conn:
+        row = conn.execute('SELECT * FROM monitor_targets WHERE id = ?', (req.target_id,)).fetchone()
+        if not row:
+            return {'ok': False, 'message': 'target not found', 'data': None, 'meta': {}}
+        conn.execute(
+            'UPDATE monitor_targets SET notify_enabled = ?, updated_at = ? WHERE id = ?',
+            (1 if req.notify_enabled else 0, now, req.target_id),
+        )
+        updated = conn.execute('SELECT * FROM monitor_targets WHERE id = ?', (req.target_id,)).fetchone()
+    return {'ok': True, 'message': 'monitor notify updated', 'data': dict(updated) if updated else None, 'meta': {}}
 
 
 @router.post('/run')

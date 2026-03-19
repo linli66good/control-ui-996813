@@ -114,8 +114,8 @@ export default function Dashboard() {
     }
     const rows = rowsFromRange(learnSheetQ.data?.values || null)
     return rows
-      .filter((x) => String(x['Date'] || '') === today)
-      .map((x, idx) => ({ key: `sheet-${idx}`, title: String(x['Title'] || ''), score: Number(x['Score'] || 0) }))
+      .filter((x: any) => String(x['Date'] || '') === today)
+      .map((x: any, idx: number) => ({ key: `sheet-${idx}`, title: String(x['Title'] || ''), score: Number(x['Score'] || 0) }))
   }, [learnApiQ.data, learnSheetQ.data, today])
 
   const newsRows = useMemo(() => {
@@ -125,8 +125,8 @@ export default function Dashboard() {
     }
     const rows = rowsFromRange(newsSheetQ.data?.values || null)
     return rows
-      .filter((x) => String(x['日期(UTC+8)'] || '') === today)
-      .map((x, idx) => ({ key: `sheet-${idx}`, title: String(x['标题'] || ''), type: String(x['Source'] || x['类型'] || 'other') }))
+      .filter((x: any) => String(x['日期(UTC+8)'] || '') === today)
+      .map((x: any, idx: number) => ({ key: `sheet-${idx}`, title: String(x['标题'] || ''), type: String(x['Source'] || x['类型'] || 'other') }))
   }, [newsApiQ.data, newsSheetQ.data, today])
 
   const analysisRows = useMemo(() => analysisQ.data?.data.items || [], [analysisQ.data])
@@ -251,7 +251,7 @@ export default function Dashboard() {
                   size="small"
                   dataSource={learnRows.slice(0, 3)}
                   locale={{ emptyText: '今天还没有 learn 数据' }}
-                  renderItem={(item) => (
+                  renderItem={(item: any) => (
                     <List.Item>
                       <Space direction="vertical" size={0} style={{ width: '100%' }}>
                         <Typography.Text ellipsis>{item.title}</Typography.Text>
@@ -268,7 +268,7 @@ export default function Dashboard() {
                   size="small"
                   dataSource={newsRows.slice(0, 5)}
                   locale={{ emptyText: '今天还没有 news 数据' }}
-                  renderItem={(item) => (
+                  renderItem={(item: any) => (
                     <List.Item>
                       <Space direction="vertical" size={0} style={{ width: '100%' }}>
                         <Typography.Text ellipsis>{item.title}</Typography.Text>

@@ -351,6 +351,14 @@ export async function createMonitorTarget(payload: {
   return data
 }
 
+export async function updateMonitorNotify(targetId: number, notifyEnabled: boolean) {
+  const { data } = await http.post('/v1/monitor/update-notify', {
+    target_id: targetId,
+    notify_enabled: notifyEnabled,
+  })
+  return data
+}
+
 export async function deleteMonitorTarget(targetId: number) {
   const { data } = await http.post('/v1/monitor/delete', null, { params: { target_id: targetId } })
   return data

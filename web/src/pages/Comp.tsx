@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Checkbox, Descriptions, Drawer, Form, Input, Popconfirm, Space, Table, Tag, Typography, message } from 'antd'
+import { Alert, Button, Card, Checkbox, Descriptions, Drawer, Form, Input, Popconfirm, Space, Switch, Table, Tag, Typography, message } from 'antd'
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
@@ -9,6 +9,7 @@ import {
   getMonitorList,
   getMonitorSnapshots,
   runMonitorTarget,
+  updateMonitorNotify,
   type MonitorSnapshot,
   type MonitorTarget,
 } from '../api/client'
@@ -64,6 +65,7 @@ export default function Comp() {
   const [note, setNote] = useState('')
   const [notifyEnabled, setNotifyEnabled] = useState(false)
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [togglingId, setTogglingId] = useState<number | null>(null)
 
   const listQ = useQuery({ queryKey: ['monitor-list'], queryFn: () => getMonitorList() })
   const detailQ = useQuery({
@@ -87,6 +89,20 @@ export default function Comp() {
       await listQ.refetch()
     },
     onError: (err) => message.error(String(err)),
+  })
+
+  const notifyM = useMutation({
+    mutationFn: ({ targetId, notifyEnabled }: { targetId: number; notifyEnabled: boolean }) => updateMonitorNotify(targetId, notifyEnabled),
+    onSuccess: async (_resp, vars) => {
+      message.success(vars.notifyEnabled ? '已开启 Feishu 通知' : '已关闭 Feishu 通知')
+      setTogglingId(null)
+      await listQ.refetch()
+      if (selectedId) await detailQ.refetch()
+    },
+    onError: (err) => {
+      message.error(String(err))
+      setTogglingId(null)
+    },
   })
 
   const runM = useMutation({
@@ -127,6 +143,11 @@ export default function Comp() {
   const latestPayload = parsePayload(latest?.raw_payload)
   const snapshots: MonitorSnapshot[] = snapshotsQ.data?.data.items || []
 
+  const toggleNotify = (record: MonitorTarget, checked: boolean) => {
+    setTogglingId(record.id)
+    notifyM.mutate({ targetId: record.id, notifyEnabled: checked })
+  }
+
   return (
     <>
       <Card title="竞品监控" style={{ marginBottom: 16 }}>
@@ -150,7 +171,7 @@ export default function Comp() {
           </Form.Item>
         </Form>
         <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
-          当前已接入真实商品抓取；现在创建监控目标时，也可以直接决定是否启用 Feishu 通知钩子。
+          当前已接入真实商品抓取；现在不仅创建时可决定通知，已有目标也可以直接在列表里切换 Feishu 通知开关。
         </Typography.Paragraph>
       </Card>
 
@@ -177,8 +198,18 @@ export default function Comp() {
             {
               title: '通知',
               dataIndex: 'notify_enabled',
-              width: 100,
-              render: (v) => <Tag color={Number(v) ? 'green' : 'default'}>{Number(v) ? 'on' : 'off'}</Tag>,
+              width: 140,
+              render: (v, record: MonitorTarget) => (
+                <Space>
+                  <Switch
+                    size="small"
+                    checked={!!Number(v)}
+                    loading={notifyM.isPending && togglingId === record.id}
+                    onChange={(checked) => toggleNotify(record, checked)}
+                  />
+                  <Tag color={Number(v) ? 'green' : 'default'}>{Number(v) ? 'on' : 'off'}</Tag>
+                </Space>
+              ),
             },
             { title: '备注', dataIndex: 'note', width: 160 },
             { title: '最近价格', dataIndex: 'price_text', width: 120 },
@@ -229,7 +260,15 @@ export default function Comp() {
                 <Descriptions.Item label="国家">{current.country}</Descriptions.Item>
                 <Descriptions.Item label="ASIN">{current.asin}</Descriptions.Item>
                 <Descriptions.Item label="通知开关">
-                  <Tag color={Number(current.notify_enabled) ? 'green' : 'default'}>{Number(current.notify_enabled) ? 'Feishu on' : 'Feishu off'}</Tag>
+                  <Space>
+                    <Tag color={Number(current.notify_enabled) ? 'green' : 'default'}>{Number(current.notify_enabled) ? 'Feishu on' : 'Feishu off'}</Tag>
+                    <Switch
+                      size="small"
+                      checked={!!Number(current.notify_enabled)}
+                      loading={notifyM.isPending && togglingId === current.id}
+                      onChange={(checked) => toggleNotify(current, checked)}
+                    />
+                  </Space>
                 </Descriptions.Item>
                 <Descriptions.Item label="备注">{current.note || '-'}</Descriptions.Item>
               </Descriptions>
