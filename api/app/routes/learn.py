@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter
 
 from ..db.sqlite import connect
+from workers.learn.sync_learn_cards import sync_learn_cards
 
 router = APIRouter(prefix='/v1/learn', tags=['learn'])
 
@@ -104,9 +105,10 @@ def get_detail(item_id: int):
 
 @router.post('/generate-daily')
 def generate_daily():
+    result = sync_learn_cards()
     return {
         'ok': True,
-        'message': 'daily learn report generated',
-        'data': {'generated_count': 0},
+        'message': 'daily learn sync completed',
+        'data': result,
         'meta': {},
     }
