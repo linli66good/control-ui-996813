@@ -5,6 +5,8 @@ import SheetRangeViewer from './pages/SheetRangeViewer'
 import Placeholder from './pages/Placeholder'
 import News from './pages/News'
 import Learn from './pages/Learn'
+import Comp from './pages/Comp'
+import Analysis from './pages/Analysis'
 import InputsAsin from './pages/InputsAsin'
 import InputsKeywords from './pages/InputsKeywords'
 
@@ -19,7 +21,8 @@ export const router = createBrowserRouter([
   { path: '/learn', element: wrap(<Learn />) },
   { path: '/inputs/asins', element: wrap(<InputsAsin />) },
   { path: '/inputs/keywords', element: wrap(<InputsKeywords />) },
-  { path: '/comp', element: wrap(<Placeholder title="竞品监控" />) },
+  { path: '/comp', element: wrap(<Comp />) },
+  { path: '/analysis', element: wrap(<Analysis />) },
   { path: '/finder', element: wrap(<Placeholder title="选品" />) },
   { path: '/kw', element: wrap(<Placeholder title="关键词/趋势" />) },
   { path: '/inventory', element: wrap(<Placeholder title="库存管理" />) },

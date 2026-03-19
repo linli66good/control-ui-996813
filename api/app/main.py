@@ -4,10 +4,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from . import sheets
+from .db.sqlite import init_db
+from .routes import learn, news, monitor, analysis, system
 
 API_SHARED_SECRET = os.environ.get("API_SHARED_SECRET", "")
 
-app = FastAPI(title="996813 Control API", version="0.2.1")
+app = FastAPI(title="996813 Control API", version="0.3.0")
 
 # (Optional) CORS: not needed if only called via Pages Functions, but keep safe default.
 app.add_middleware(
@@ -17,6 +19,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def on_startup() -> None:
+    # Ensure SQLite schema exists for MVP modules.
+    init_db()
 
 
 def require_secret(x_shared_secret: str | None):
@@ -170,3 +178,11 @@ def v1_inputs_keywords(x_shared_secret: str | None = Header(default=None, alias=
         return {"items": out}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Mount MVP v3-style grouped routes (currently skeletons)
+app.include_router(system.router)
+app.include_router(learn.router)
+app.include_router(news.router)
+app.include_router(monitor.router)
+app.include_router(analysis.router)

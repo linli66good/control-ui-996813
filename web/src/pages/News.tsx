@@ -1,13 +1,13 @@
-import { Button, Card, Input, Space, Table, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Input, Space, Table, Tag, Typography } from 'antd'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getRange } from '../api/client'
+import { getNewsList, getRange, type NewsItem } from '../api/client'
 
 function toRows(values: string[][]) {
   const header = values[0] || []
   const rows = values.slice(1)
   return rows.map((r, i) => {
-    const obj: Record<string, any> = { key: i }
+    const obj: Record<string, any> = { key: `sheet-${i}` }
     header.forEach((h, idx) => {
       obj[h || `col_${idx}`] = r[idx] ?? ''
     })
@@ -15,18 +15,49 @@ function toRows(values: string[][]) {
   })
 }
 
+function normalizeApiRows(items: NewsItem[]) {
+  return items.map((item) => ({
+    key: `api-${item.id}`,
+    '日期(UTC+8)': item.news_date,
+    标题: item.title,
+    摘要: item.summary || item.content || '',
+    来源: item.source || '',
+    链接: item.source_url,
+    Source: item.news_type,
+    Notes: '',
+    SourceMode: 'api',
+  }))
+}
+
 export default function News() {
   const [a1] = useState('Daily_News!A1:G200')
   const [qText, setQText] = useState('')
 
-  const q = useQuery({
-    queryKey: ['range', a1],
-    queryFn: () => getRange(a1),
+  const apiQ = useQuery({
+    queryKey: ['news-list', qText],
+    queryFn: () => getNewsList({ page: 1, page_size: 100 }),
   })
 
-  const values = q.data?.values || null
+  const sheetQ = useQuery({
+    queryKey: ['range', a1],
+    queryFn: () => getRange(a1),
+    enabled: !(apiQ.data?.data.items?.length ?? 0),
+  })
 
   const rows = useMemo(() => {
+    const apiItems = apiQ.data?.data.items || []
+    if (apiItems.length) {
+      const base = normalizeApiRows(apiItems)
+      if (!qText.trim()) return base
+      const t = qText.trim().toLowerCase()
+      return base.filter((x) =>
+        String(x['标题'] || '').toLowerCase().includes(t) ||
+        String(x['摘要'] || '').toLowerCase().includes(t) ||
+        String(x['来源'] || '').toLowerCase().includes(t),
+      )
+    }
+
+    const values = sheetQ.data?.values || null
     if (!values || !values.length) return []
     let r = toRows(values)
     if (qText.trim()) {
@@ -37,8 +68,13 @@ export default function News() {
         String(x['来源'] || '').toLowerCase().includes(t),
       )
     }
-    return r
-  }, [values, qText])
+    return r.map((x) => ({ ...x, SourceMode: 'sheet' }))
+  }, [apiQ.data, sheetQ.data, qText])
+
+  const usingApi = (apiQ.data?.data.items || []).length > 0
+  const loading = apiQ.isLoading || sheetQ.isLoading
+  const refreshing = apiQ.isFetching || sheetQ.isFetching
+  const loadError = apiQ.isError && sheetQ.isError
 
   return (
     <Card
@@ -53,18 +89,34 @@ export default function News() {
             onChange={(e) => setQText(e.target.value)}
             value={qText}
           />
-          <Button onClick={() => q.refetch()} loading={q.isFetching}>
+          <Button
+            onClick={() => {
+              void apiQ.refetch()
+              void sheetQ.refetch()
+            }}
+            loading={refreshing}
+          >
             刷新
           </Button>
         </Space>
       }
     >
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-        读取范围：<Tag>{a1}</Tag>
-      </Typography.Paragraph>
+      <Space direction="vertical" size={8} style={{ width: '100%', marginBottom: 12 }}>
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+          API 优先，Sheets 保底。当前来源：<Tag color={usingApi ? 'green' : 'gold'}>{usingApi ? 'API' : 'Sheet'}</Tag>
+        </Typography.Paragraph>
+        {!usingApi ? (
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+            读取范围：<Tag>{a1}</Tag>
+          </Typography.Paragraph>
+        ) : null}
+        {apiQ.isError && !usingApi ? (
+          <Alert type="warning" showIcon message="新接口暂无数据或加载失败，已自动回退到 Sheet 数据。" />
+        ) : null}
+      </Space>
 
-      {q.isError ? (
-        <Typography.Text type="danger">加载失败：{String(q.error)}</Typography.Text>
+      {loadError ? (
+        <Typography.Text type="danger">加载失败：{String(apiQ.error || sheetQ.error)}</Typography.Text>
       ) : (
         <Table
           size="small"
@@ -82,7 +134,6 @@ export default function News() {
               dataIndex: '链接',
               width: 120,
               render: (v) => {
-                // Sheet里可能是“打开”或 URL
                 const s = String(v || '')
                 const isUrl = /^https?:\/\//i.test(s)
                 if (isUrl) {
@@ -97,8 +148,14 @@ export default function News() {
             },
             { title: 'Source', dataIndex: 'Source', width: 120 },
             { title: 'Notes', dataIndex: 'Notes', width: 200 },
+            {
+              title: '数据来源',
+              dataIndex: 'SourceMode',
+              width: 90,
+              render: (v) => <Tag color={v === 'api' ? 'green' : 'gold'}>{String(v || '')}</Tag>,
+            },
           ]}
-          loading={q.isLoading}
+          loading={loading}
         />
       )}
     </Card>
